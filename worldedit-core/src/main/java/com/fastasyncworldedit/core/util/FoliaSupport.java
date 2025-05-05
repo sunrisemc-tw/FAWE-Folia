@@ -22,7 +22,11 @@ public final class FoliaSupport {
             try {
                 tickThreadClass = Class.forName("io.papermc.paper.util.TickThread");
             } catch (ClassNotFoundException e) {
-                throw new AssertionError(e);
+                try {
+                    tickThreadClass = Class.forName("ca.spottedleaf.moonrise.common.util.TickThread");
+                } catch (ClassNotFoundException ex) {
+                    throw new AssertionError(ex);
+                }
             }
         }
         TICK_THREAD_CLASS = tickThreadClass;
