@@ -96,7 +96,8 @@ public abstract class QueueHandler implements Trimable, Runnable {
     private long allocate = 50;
 
     protected QueueHandler() {
-        TaskManager.taskManager().repeat(this, 1);
+        // TODO make thing region independent
+        TaskManager.taskManager().repeatGlobal(this, 1);
     }
 
     @ApiStatus.Internal
@@ -106,9 +107,10 @@ public abstract class QueueHandler implements Trimable, Runnable {
 
     @Override
     public void run() {
-        if (!Fawe.isMainThread()) {
-            throw new IllegalStateException("Not main thread");
-        }
+        // TheArcFox - bad practice
+        /*if (!Fawe.isTickThread()) {
+            throw new IllegalStateException("Not ticking thread");
+        }*/
         if (!syncTasks.isEmpty()) {
             long currentAllocate = getAllocate();
 
