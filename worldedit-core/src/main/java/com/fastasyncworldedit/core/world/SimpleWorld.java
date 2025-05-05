@@ -1,6 +1,8 @@
 package com.fastasyncworldedit.core.world;
 
 import com.fastasyncworldedit.core.Fawe;
+import com.fastasyncworldedit.core.util.FoliaSupport;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.sk89q.worldedit.EditSession;
 import com.sk89q.worldedit.MaxChangedBlocksException;
 import com.sk89q.worldedit.WorldEditException;
@@ -13,6 +15,7 @@ import com.sk89q.worldedit.math.BlockVector2;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.math.Vector3;
 import com.sk89q.worldedit.util.Direction;
+import com.sk89q.worldedit.util.Location;
 import com.sk89q.worldedit.util.TreeGenerator;
 import com.sk89q.worldedit.world.World;
 import com.sk89q.worldedit.world.block.BaseBlock;
@@ -97,11 +100,22 @@ public interface SimpleWorld extends World {
 
     @Override
     default boolean queueBlockBreakEffect(Platform server, BlockVector3 position, BlockType blockType, double priority) {
-        Fawe.instance().getQueueHandler().sync((Supplier<Boolean>) () -> playEffect(
-                position,
-                2001,
-                blockType.getLegacyCombinedId() >> 4
-        ));
+        // TheArcFox - run on task manager
+        Fawe.instance().getQueueHandler().sync((Supplier<Boolean>) () -> {
+            if (FoliaSupport.isFolia()) {
+                return TaskManager.taskManager().syncAt(() -> playEffect(
+                        position,
+                        2001,
+                        blockType.getLegacyCombinedId() >> 4
+                ), new Location(this, position.toVector3()));
+            } else {
+                return playEffect(
+                        position,
+                        2001,
+                        blockType.getLegacyCombinedId() >> 4
+                );
+            }
+        });
         return true;
     }
 
