@@ -13,6 +13,7 @@ import com.sk89q.worldedit.function.pattern.Pattern;
 import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.world.RegenOptions;
+import com.sk89q.worldedit.world.World;
 import com.sk89q.worldedit.world.biome.BiomeType;
 import com.sk89q.worldedit.world.block.BaseBlock;
 import org.bukkit.generator.BiomeProvider;
@@ -106,7 +107,10 @@ public abstract class Regenerator {
         final long timeoutPerTick = TimeUnit.MILLISECONDS.toNanos(10);
         int taskId = TaskManager.taskManager().repeatAsync(() -> {
             final long startTime = System.nanoTime();
-            runTasks(() -> System.nanoTime() - startTime < timeoutPerTick);
+            // TheArcFox - schedule runTasks on region
+            TaskManager.taskManager().task(() -> {
+                runTasks(() -> System.nanoTime() - startTime < timeoutPerTick);
+            }, getWorld(), 0, 0);
         }, 1);
         //Setting Blocks
         boolean genbiomes = options.shouldRegenBiomes();
@@ -251,6 +255,9 @@ public abstract class Regenerator {
         }
         return originalBukkitWorld.getBiomeProvider();
     }
+
+    // TheArcFox - require world for region scheduler
+    protected abstract World getWorld();
 
     //classes
 

@@ -272,6 +272,12 @@ public class PaperweightRegen extends Regenerator {
         return new ChunkCache<>(BukkitAdapter.adapt(freshWorld.getWorld()));
     }
 
+    // TheArcFox - schedule runTasks on region
+    @Override
+    protected com.sk89q.worldedit.world.World getWorld() {
+        return BukkitAdapter.adapt(freshWorld.getWorld());
+    }
+
     //util
     @SuppressWarnings("unchecked")
     private void removeWorldFromWorldsMap() {
