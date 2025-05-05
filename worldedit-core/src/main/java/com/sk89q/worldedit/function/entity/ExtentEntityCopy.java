@@ -170,7 +170,8 @@ public class ExtentEntityCopy implements EntityFunction {
                                 uuid
                         );
                     } else {
-                        TaskManager.taskManager().sync(entity::remove);
+                        // TheArcFox - TODO (folia) run on entity scheduler
+                        TaskManager.taskManager().syncAt(entity::remove, entity.getLocation());
                         //FAWE end
                     }
                 }

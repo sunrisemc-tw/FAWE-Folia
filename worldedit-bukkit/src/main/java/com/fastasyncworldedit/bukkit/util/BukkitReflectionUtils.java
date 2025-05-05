@@ -43,13 +43,25 @@ public class BukkitReflectionUtils {
     }
 
     public static Class<?> getNmsClass(final String name) {
-        final String className = "net.minecraft.server." + getVersion() + "." + name;
-        return ReflectionUtils.getClass(className);
+        // TheArcFox - relocating
+        if (MinecraftVersion.getCurrent().isLowerThan(new MinecraftVersion(1, 20, 5))) {
+            final String className = "net.minecraft.server." + getVersion() + "." + name;
+            return ReflectionUtils.getClass(className);
+        } else {
+            final String className = "net.minecraft.server." + name;
+            return ReflectionUtils.getClass(className);
+        }
     }
 
     public static Class<?> getCbClass(final String name) {
-        final String className = "org.bukkit.craftbukkit." + getVersion() + "." + name;
-        return ReflectionUtils.getClass(className);
+        // TheArcFox - relocating
+        if (MinecraftVersion.getCurrent().isLowerThan(new MinecraftVersion(1, 20, 5))) {
+            final String className = "org.bukkit.craftbukkit." + getVersion() + "." + name;
+            return ReflectionUtils.getClass(className);
+        } else {
+            final String className = "org.bukkit.craftbukkit." + name;
+            return ReflectionUtils.getClass(className);
+        }
     }
 
     public static String getVersion() {

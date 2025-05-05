@@ -104,7 +104,7 @@ public abstract class Regenerator {
     private void copyToWorld() {
         createSource();
         final long timeoutPerTick = TimeUnit.MILLISECONDS.toNanos(10);
-        int taskId = TaskManager.taskManager().repeat(() -> {
+        int taskId = TaskManager.taskManager().repeatAsync(() -> {
             final long startTime = System.nanoTime();
             runTasks(() -> System.nanoTime() - startTime < timeoutPerTick);
         }, 1);
