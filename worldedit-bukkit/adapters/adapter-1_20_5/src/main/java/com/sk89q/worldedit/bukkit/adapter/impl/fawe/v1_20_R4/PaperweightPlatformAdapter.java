@@ -378,7 +378,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         if (lockHolder.chunkLock == null) {
             return;
         }
-        MinecraftServer.getServer().execute(() -> {
+        TaskManager.taskManager().task(() -> {
             try {
                 ClientboundLevelChunkWithLightPacket packet;
                 if (PaperLib.isPaper()) {
@@ -402,7 +402,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             } finally {
                 NMSAdapter.endChunkPacketSend(nmsWorld.getWorld().getName(), pair, lockHolder);
             }
-        });
+        }, BukkitAdapter.adapt(nmsWorld.getWorld()), chunkX, chunkZ);
     }
 
     private static List<ServerPlayer> nearbyPlayers(ServerLevel serverLevel, ChunkPos coordIntPair) {
