@@ -11,6 +11,7 @@ import com.fastasyncworldedit.core.queue.IQueueExtent;
 import com.fastasyncworldedit.core.queue.implementation.QueueHandler;
 import com.fastasyncworldedit.core.queue.implementation.blocks.CharGetBlocks;
 import com.fastasyncworldedit.core.util.MemUtil;
+import com.google.common.util.concurrent.Futures;
 import com.sk89q.worldedit.internal.util.LogManagerCompat;
 import com.sk89q.worldedit.util.formatting.text.TextComponent;
 import org.apache.logging.log4j.Logger;
@@ -53,6 +54,14 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
     protected abstract void send();
 
     protected abstract CompletableFuture<LevelChunk> ensureLoaded(ServerLevel serverLevel);
+
+    protected abstract <T extends Future<T>> T internalCallWrapped(
+            IChunkSet set,
+            Runnable finalizer,
+            int copyKey,
+            LevelChunk nmsChunk,
+            ServerLevel nmsWorld
+    ) throws Exception;
 
     protected abstract <T extends Future<T>> T internalCall(
             IChunkSet set,
@@ -111,7 +120,8 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
             ServerLevel nmsWorld
     ) {
         try {
-            return internalCall(set, finalizer, copyKey, nmsChunk, nmsWorld);
+            // TheArcFox - wrapped to run task on region scheduler
+            return internalCallWrapped(set, finalizer, copyKey, nmsChunk, nmsWorld);
         } catch (Throwable e) {
             LOGGER.error("Error performing chunk call at chunk {},{}", chunkX, chunkZ, e);
             return null;
@@ -147,7 +157,8 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
                 }
             };
             //noinspection unchecked - required at compile time
-            return (T) (Future) queueHandler.sync(chain);
+            // TheArcFox - running tasks sequentially
+            return (T) (Future) Futures.immediateFuture(chain.call());
         } else {
             if (callback != null) {
                 callback.run();
