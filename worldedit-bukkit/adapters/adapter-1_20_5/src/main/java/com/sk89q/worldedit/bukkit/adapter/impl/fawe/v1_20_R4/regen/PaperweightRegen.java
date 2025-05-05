@@ -5,6 +5,7 @@ import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.queue.IChunkCache;
 import com.fastasyncworldedit.core.queue.IChunkGet;
 import com.fastasyncworldedit.core.queue.implementation.chunk.ChunkCache;
+import com.fastasyncworldedit.core.util.ReflectionUtils;
 import com.google.common.collect.ImmutableList;
 import com.mojang.serialization.Lifecycle;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
@@ -14,11 +15,13 @@ import com.sk89q.worldedit.extent.Extent;
 import com.sk89q.worldedit.regions.Region;
 import com.sk89q.worldedit.util.io.file.SafeFiles;
 import com.sk89q.worldedit.world.RegenOptions;
+import io.papermc.paper.chunk.system.scheduling.ChunkHolderManager;
 import net.minecraft.core.Holder;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.dedicated.DedicatedServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.TicketType;
 import net.minecraft.server.level.progress.ChunkProgressListener;
 import net.minecraft.util.ProgressListener;
 import net.minecraft.world.level.ChunkPos;
@@ -42,6 +45,7 @@ import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.OptionalLong;
+import java.util.concurrent.CompletableFuture;
 import java.util.function.BooleanSupplier;
 import java.util.function.Supplier;
 
@@ -146,61 +150,81 @@ public class PaperweightRegen extends Regenerator {
 
         BiomeProvider biomeProvider = getBiomeProvider();
 
-
+        Field randomSpawnSelection = ServerLevel.class.getDeclaredField("randomSpawnSelection");
         //init world
-        freshWorld = Fawe.instance().getQueueHandler().sync((Supplier<ServerLevel>) () -> new ServerLevel(
-                server,
-                server.executor,
-                session,
-                newWorldData,
-                originalServerWorld.dimension(),
-                new LevelStem(
-                        originalServerWorld.dimensionTypeRegistration(),
-                        originalServerWorld.getChunkSource().getGenerator()
-                ),
-                new RegenNoOpWorldLoadListener(),
-                originalServerWorld.isDebug(),
-                seed,
-                ImmutableList.of(),
-                false,
-                originalServerWorld.getRandomSequences(),
-                environment,
-                generator,
-                biomeProvider
-        ) {
+        freshWorld = CompletableFuture.supplyAsync(
+                () -> {
+                    ServerLevel level = new ServerLevel(
+                            server,
+                            server.executor,
+                            session,
+                            newWorldData,
+                            originalServerWorld.dimension(),
+                            new LevelStem(
+                                    originalServerWorld.dimensionTypeRegistration(),
+                                    originalServerWorld.getChunkSource().getGenerator()
+                            ),
+                            new RegenNoOpWorldLoadListener(),
+                            originalServerWorld.isDebug(),
+                            seed,
+                            ImmutableList.of(),
+                            false,
+                            originalServerWorld.getRandomSequences(),
+                            environment,
+                            generator,
+                            biomeProvider
+                    ) {
 
-            private final Holder<Biome> singleBiome = options.hasBiomeType() ? DedicatedServer.getServer().registryAccess()
-                    .registryOrThrow(BIOME).asHolderIdMap().byIdOrThrow(
-                            WorldEditPlugin.getInstance().getBukkitImplAdapter().getInternalBiomeId(options.getBiomeType())
-                    ) : null;
+                        private final Holder<Biome> singleBiome = options.hasBiomeType() ? DedicatedServer.getServer().registryAccess()
+                                .registryOrThrow(BIOME).asHolderIdMap().byIdOrThrow(
+                                        WorldEditPlugin.getInstance().getBukkitImplAdapter().getInternalBiomeId(options.getBiomeType())
+                                ) : null;
 
-            @Override
-            public @NotNull Holder<Biome> getUncachedNoiseBiome(int biomeX, int biomeY, int biomeZ) {
-                if (options.hasBiomeType()) {
-                    return singleBiome;
-                }
-                return super.getUncachedNoiseBiome(biomeX, biomeY, biomeZ);
-            }
+                        @Override
+                        public @NotNull Holder<Biome> getUncachedNoiseBiome(int biomeX, int biomeY, int biomeZ) {
+                            if (options.hasBiomeType()) {
+                                return singleBiome;
+                            }
+                            return super.getUncachedNoiseBiome(biomeX, biomeY, biomeZ);
+                        }
 
-            @Override
-            public void save(
-                    @org.jetbrains.annotations.Nullable final ProgressListener progressListener,
-                    final boolean flush,
-                    final boolean savingDisabled
-            ) {
-                // noop, spigot
-            }
+                        @Override
+                        public void save(
+                                @Nullable final ProgressListener progressListener,
+                                final boolean flush,
+                                final boolean savingDisabled
+                        ) {
+                            // noop, spigot
+                        }
+        
+                        @Override
+                        public void save(
+                                @Nullable final ProgressListener progressListener,
+                                final boolean flush,
+                                final boolean savingDisabled,
+                                final boolean close
+                        ) {
+                            // noop, paper
+                        }
+                    };
 
-            @Override
-            public void save(
-                    @Nullable final ProgressListener progressListener,
-                    final boolean flush,
-                    final boolean savingDisabled,
-                    final boolean close
-            ) {
-                // noop, paper
-            }
-        }).get();
+                    try {
+                        ReflectionUtils.setFailsafeFieldValue(randomSpawnSelection, level,
+                                new ChunkPos(level.getChunkSource().randomState().sampler().findSpawnPosition()));
+                    } catch (IllegalAccessException e) {
+                        throw new RuntimeException(e);
+                    }
+                    for (int x = -64; x <= 64; ++x) {
+                        for (int z = -64; z <= 64; ++z) {
+                            ChunkPos pos = new ChunkPos(x, z);
+                            level.chunkSource.addTicketAtLevel(
+                                    TicketType.UNKNOWN, pos, ChunkHolderManager.MAX_TICKET_LEVEL, pos
+                            );
+                        }
+                    }
+
+                    return level;
+                }, server.executor).join();
         freshWorld.noSave = true;
         removeWorldFromWorldsMap();
         newWorldData.checkName(originalServerWorld.serverLevelData.getLevelName()); //rename to original world name
