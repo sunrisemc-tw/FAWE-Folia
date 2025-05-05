@@ -6,7 +6,7 @@ include("worldedit-libs")
     include("worldedit-bukkit:adapters:adapter-$it")
 }*/
 
-listOf("1_20_5").forEach {
+listOf("1_20_5", "1_21_4").forEach {
     include("worldedit-bukkit:adapters:adapter-$it")
 }
 
