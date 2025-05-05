@@ -8,8 +8,10 @@ import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.FaweCache;
 import com.fastasyncworldedit.core.math.BitArrayUnstretched;
 import com.fastasyncworldedit.core.math.IntPair;
+import com.fastasyncworldedit.core.util.FoliaSupport;
 import com.fastasyncworldedit.core.util.MathMan;
 import com.fastasyncworldedit.core.util.TaskManager;
+import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.WorldEditPlugin;
 import com.sk89q.worldedit.bukkit.adapter.BukkitImplAdapter;
 import com.sk89q.worldedit.bukkit.adapter.Refraction;
@@ -19,6 +21,7 @@ import com.sk89q.worldedit.world.biome.BiomeTypes;
 import com.sk89q.worldedit.world.block.BlockState;
 import com.sk89q.worldedit.world.block.BlockTypesCache;
 import io.papermc.lib.PaperLib;
+import io.papermc.paper.util.TickThread;
 import io.papermc.paper.world.ChunkEntitySlices;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
@@ -78,6 +81,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import java.util.function.IntFunction;
+import java.util.function.Supplier;
 
 import static net.minecraft.core.registries.Registries.BIOME;
 
@@ -694,6 +698,13 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         return List.of();
     }
 
+    public static boolean isTickThreadFor(LevelChunk levelChunk) {
+        if (FoliaSupport.isFolia()) {
+            return TickThread.isTickThreadFor(levelChunk.level, levelChunk.locX, levelChunk.locZ);
+        }
+        return Fawe.isTickThread();
+    }
+
     record FakeIdMapBlock(int size) implements IdMap<net.minecraft.world.level.block.state.BlockState> {
 
         @Override
@@ -736,4 +747,11 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
     }
 
+    public static void task(Runnable task, ServerLevel level, int chunkX, int chunkZ) {
+        TaskManager.taskManager().task(task, BukkitAdapter.adapt(level.getWorld()), chunkX, chunkZ);
+    }
+
+    public static <T> T sync(Supplier<T> task, ServerLevel level, int chunkX, int chunkZ) {
+        return TaskManager.taskManager().syncAt(task, BukkitAdapter.adapt(level.getWorld()), chunkX, chunkZ);
+    }
 }
