@@ -6,4 +6,7 @@ public interface FAWEPlatformAdapterImpl {
 
     void sendChunk(IChunkGet chunk, int mask, boolean lighting);
 
+    double getTps();
+
+    long getTick();
 }

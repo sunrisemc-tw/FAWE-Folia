@@ -5,11 +5,15 @@ import com.fastasyncworldedit.core.FAWEPlatformAdapterImpl;
 import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.math.IntPair;
 import com.fastasyncworldedit.core.queue.IChunkGet;
+import com.fastasyncworldedit.core.util.FoliaSupport;
 import com.fastasyncworldedit.core.util.MathMan;
 import com.fastasyncworldedit.core.util.ReflectionUtils;
 import com.sk89q.worldedit.world.block.BlockTypesCache;
+import org.bukkit.Bukkit;
 
+import java.lang.reflect.Method;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.IntFunction;
 
@@ -100,6 +104,89 @@ public class NMSAdapter implements FAWEPlatformAdapterImpl {
             throw new IllegalArgumentException("(IChunkGet) chunk not of type BukkitGetBlocks");
         }
         ((AbstractBukkitGetBlocks) chunk).send();
+    }
+
+    private static Method getCurrentRegionMethod;
+    private static Method getDataMethod;
+    private static Method getRegionSchedulingHandleMethod;
+    private static Method getTickReport5sMethod;
+    private static Method tpsDataMethod;
+    private static Method segmentAllMethod;
+    private static Method averageMethod;
+
+    private static final AtomicBoolean initialized = new AtomicBoolean(false);
+    private static final Object initLock = new Object();
+
+    private static void ensureInitialized() {
+        if (initialized.get()) {
+            return;
+        }
+
+        synchronized (initLock) {
+            if (initialized.get()) {
+                return;
+            }
+
+            try {
+                Class<?> tickRegionSchedulerClass = Class.forName("io.papermc.paper.threadedregions.TickRegionScheduler");
+                getCurrentRegionMethod = tickRegionSchedulerClass.getMethod("getCurrentRegion");
+
+                Class<?> regionClass = getCurrentRegionMethod.getReturnType();
+                getDataMethod = regionClass.getDeclaredMethod("getData");
+
+                Class<?> regionDataClass = Class.forName("io.papermc.paper.threadedregions.TickRegions$TickRegionData");
+                getRegionSchedulingHandleMethod = regionDataClass.getDeclaredMethod("getRegionSchedulingHandle");
+
+                Class<?> handleClass = Class.forName("io.papermc.paper.threadedregions.TickRegionScheduler$RegionScheduleHandle");
+                getTickReport5sMethod = handleClass.getDeclaredMethod("getTickReport5s", long.class);
+
+                Class<?> reportClass = Class.forName("io.papermc.paper.threadedregions.TickData$TickReportData");
+                tpsDataMethod = reportClass.getDeclaredMethod("tpsData");
+
+                Class<?> tpsDataClass = Class.forName("io.papermc.paper.threadedregions.TickData$SegmentedAverage");
+                segmentAllMethod = tpsDataClass.getDeclaredMethod("segmentAll");
+
+                Class<?> segmentClass = Class.forName("io.papermc.paper.threadedregions.TickData$SegmentData");
+                averageMethod = segmentClass.getDeclaredMethod("average");
+
+                initialized.set(true);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    @Override
+    public double getTps() {
+        if (!FoliaSupport.isFolia())
+            return Bukkit.getTPS()[0];
+
+        if (true)
+            return 20.0;
+
+        ensureInitialized();
+
+        if (!initialized.get()) {
+            return 20.0;
+        }
+
+        try {
+            Object currentRegion = getCurrentRegionMethod.invoke(null);
+            Object regionData = getDataMethod.invoke(currentRegion);
+            Object regionScheduleHandle = getRegionSchedulingHandleMethod.invoke(regionData);
+            Object tickReport = getTickReport5sMethod.invoke(regionScheduleHandle, System.nanoTime());
+            Object tpsData = tpsDataMethod.invoke(tickReport);
+            Object segment = segmentAllMethod.invoke(tpsData);
+            return (double) averageMethod.invoke(segment);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return 20.0;
+        }
+    }
+
+    @Override
+    public long getTick() {
+        return Bukkit.getCurrentTick();
     }
 
     /**

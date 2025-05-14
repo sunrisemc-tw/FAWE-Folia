@@ -137,9 +137,8 @@ public class Fawe {
             }
         }, 1);
 
-        if (!FoliaSupport.isFolia()) {
-            // TODO (folia) TaskManager.taskManager().repeat(timer, 1);
-        }
+        // todo (folia) it is correct?
+        // TaskManager.taskManager().repeatGlobal(timer, 1);
 
         TaskManager.taskManager().repeatAsync(MemUtil::checkAndSetApproachingLimit, 1);
 

@@ -1,5 +1,7 @@
 package com.fastasyncworldedit.core.util;
 
+import com.fastasyncworldedit.core.Fawe;
+
 import java.util.Arrays;
 
 public class FaweTimer implements Runnable {
@@ -38,6 +40,7 @@ public class FaweTimer implements Runnable {
     private double lastGetTPSValue = 20d;
 
     public double getTPS() {
+        /*
         if (tick < lastGetTPSTick + tickInterval) {
             return lastGetTPSValue;
         }
@@ -45,10 +48,13 @@ public class FaweTimer implements Runnable {
         lastGetTPSValue = total / history.length;
         lastGetTPSTick = tick;
         return lastGetTPSValue;
+         */
+
+        return Fawe.platform().getPlatformAdapter().getTps();
     }
 
     public long getTick() {
-        return tick;
+        return Fawe.platform().getPlatformAdapter().getTick();
     }
 
     public long getTickMillis() {
