@@ -2,6 +2,7 @@ package com.sk89q.worldedit.bukkit.adapter.impl.fawe.v1_21_6;
 
 import com.fastasyncworldedit.bukkit.adapter.FaweAdapter;
 import com.fastasyncworldedit.bukkit.adapter.NMSRelighterFactory;
+import com.fastasyncworldedit.bukkit.util.FoliaTaskManager;
 import com.fastasyncworldedit.core.FaweCache;
 import com.fastasyncworldedit.core.entity.LazyBaseEntity;
 import com.fastasyncworldedit.core.extent.processor.PlacementStateProcessor;
@@ -10,7 +11,9 @@ import com.fastasyncworldedit.core.nbt.FaweCompoundTag;
 import com.fastasyncworldedit.core.queue.IBatchProcessor;
 import com.fastasyncworldedit.core.queue.IChunkGet;
 import com.fastasyncworldedit.core.queue.implementation.packet.ChunkPacket;
+import com.fastasyncworldedit.core.util.FoliaSupport;
 import com.fastasyncworldedit.core.util.NbtUtils;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -331,7 +334,13 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
         Preconditions.checkNotNull(entity);
 
         CraftEntity craftEntity = ((CraftEntity) entity);
-        Entity mcEntity = craftEntity.getHandle();
+        Entity mcEntity;
+
+        if (!FoliaSupport.isFolia()) {
+            mcEntity = craftEntity.getHandle();
+        } else {
+            mcEntity = ((FoliaTaskManager) TaskManager.taskManager()).syncWith(craftEntity::getHandle, craftEntity);
+        }
 
         String id = getEntityId(mcEntity);
         EntityType type = com.sk89q.worldedit.world.entity.EntityTypes.get(id);

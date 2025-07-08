@@ -11,8 +11,10 @@ import com.fastasyncworldedit.core.math.BitArrayUnstretched;
 import com.fastasyncworldedit.core.math.IntPair;
 import com.fastasyncworldedit.core.nbt.FaweCompoundTag;
 import com.fastasyncworldedit.core.queue.IChunkSet;
+import com.fastasyncworldedit.core.util.FoliaSupport;
 import com.fastasyncworldedit.core.util.MathMan;
 import com.fastasyncworldedit.core.util.NbtUtils;
+import com.fastasyncworldedit.core.util.TaskManager;
 import com.fastasyncworldedit.core.util.collection.AdaptedMap;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.BukkitEntity;
@@ -199,22 +201,21 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
 
     @Override
     public FaweCompoundTag tile(final int x, final int y, final int z) {
-        BlockEntity blockEntity = getChunk().getBlockEntity(new BlockPos((x & 15) + (
+        BlockEntity blockEntity = PaperweightPlatformAdapter.sync(() -> getChunk().getBlockEntity(new BlockPos((x & 15) + (
                 chunkX << 4), y, (z & 15) + (
-                chunkZ << 4)));
+                chunkZ << 4))), serverLevel, chunkX, chunkZ);
         if (blockEntity == null) {
             return null;
         }
         return NMS_TO_TILE.apply(blockEntity);
-
     }
 
     @Override
     public Map<BlockVector3, FaweCompoundTag> tiles() {
-        Map<BlockPos, BlockEntity> nmsTiles = getChunk().getBlockEntities();
-        if (nmsTiles.isEmpty()) {
-            return Collections.emptyMap();
-        }
+        Map<BlockPos, BlockEntity> nmsTiles = PaperweightPlatformAdapter.sync(
+                () -> getChunk().getBlockEntities(),
+                serverLevel, chunkX, chunkZ
+        );
         return AdaptedMap.immutable(nmsTiles, posNms2We, NMS_TO_TILE);
     }
 
@@ -329,6 +330,29 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
     @Override
     public CompletableFuture<LevelChunk> ensureLoaded(ServerLevel nmsWorld) {
         return PaperweightPlatformAdapter.ensureLoaded(nmsWorld, chunkX, chunkZ);
+    }
+
+    // TheArcFox - wrapped to run task on region scheduler
+    protected <T extends Future<T>> T internalCallWrapped(
+            IChunkSet set,
+            Runnable finalizer,
+            int copyKey,
+            LevelChunk nmsChunk,
+            ServerLevel nmsWorld) throws Exception {
+        if (FoliaSupport.isFolia()) {
+            return TaskManager.taskManager().syncAt(() -> {
+                        try {
+                            return internalCall(set, finalizer, copyKey, nmsChunk, nmsWorld);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                    },
+                    BukkitAdapter.adapt(nmsWorld.getWorld()),
+                    nmsChunk.locX,
+                    nmsChunk.locZ);
+        }
+
+        return internalCall(set, finalizer, copyKey, nmsChunk, nmsWorld);
     }
 
     @Override
@@ -609,7 +633,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                 };
             }
 
-            Set<UUID> entityRemoves = set.getEntityRemoves();
+            Set<UUID> entityRemoves = Collections.synchronizedSet(set.getEntityRemoves());
             if (entityRemoves != null && !entityRemoves.isEmpty()) {
                 if (syncTasks == null) {
                     syncTasks = new Runnable[3];
@@ -644,7 +668,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                 };
             }
 
-            Collection<FaweCompoundTag> entities = set.entities();
+            Collection<FaweCompoundTag> entities = Collections.synchronizedCollection(set.entities());
             if (entities != null && !entities.isEmpty()) {
                 if (syncTasks == null) {
                     syncTasks = new Runnable[2];
@@ -701,7 +725,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
             }
 
             // set tiles
-            Map<BlockVector3, FaweCompoundTag> tiles = set.tiles();
+            Map<BlockVector3, FaweCompoundTag> tiles = Collections.synchronizedMap(set.tiles());
             if (tiles != null && !tiles.isEmpty()) {
                 if (syncTasks == null) {
                     syncTasks = new Runnable[1];
