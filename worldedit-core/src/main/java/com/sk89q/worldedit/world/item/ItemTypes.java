@@ -287,6 +287,8 @@ public final class ItemTypes {
     @Nullable
     public static final ItemType BLUE_DYE = init();
     @Nullable
+    public static final ItemType BLUE_EGG = init();
+    @Nullable
     public static final ItemType BLUE_GLAZED_TERRACOTTA = init();
     @Nullable
     public static final ItemType BLUE_ICE = init();
@@ -361,6 +363,8 @@ public final class ItemTypes {
     @Nullable
     public static final ItemType BROWN_DYE = init();
     @Nullable
+    public static final ItemType BROWN_EGG = init();
+    @Nullable
     public static final ItemType BROWN_GLAZED_TERRACOTTA = init();
     @Nullable
     public static final ItemType BROWN_MUSHROOM = init();
@@ -393,7 +397,11 @@ public final class ItemTypes {
     @Nullable
     public static final ItemType BURN_POTTERY_SHERD = init();
     @Nullable
+    public static final ItemType BUSH = init();
+    @Nullable
     public static final ItemType CACTUS = init();
+    @Nullable
+    public static final ItemType CACTUS_FLOWER = init();
     @Deprecated
     @Nullable
     public static final ItemType CACTUS_GREEN = init();
@@ -981,6 +989,8 @@ public final class ItemTypes {
     @Nullable
     public static final ItemType FIRE_CORAL_FAN = init();
     @Nullable
+    public static final ItemType FIREFLY_BUSH = init();
+    @Nullable
     public static final ItemType FIREWORK_ROCKET = init();
     @Nullable
     public static final ItemType FIREWORK_STAR = init();
@@ -1326,6 +1336,8 @@ public final class ItemTypes {
     @Nullable
     public static final ItemType LEAD = init();
     @Nullable
+    public static final ItemType LEAF_LITTER = init();
+    @Nullable
     public static final ItemType LEATHER = init();
     @Nullable
     public static final ItemType LEATHER_BOOTS = init();
@@ -1591,6 +1603,8 @@ public final class ItemTypes {
     public static final ItemType MUSIC_DISC_CREATOR_MUSIC_BOX = init();
     @Nullable
     public static final ItemType MUSIC_DISC_FAR = init();
+    @Nullable
+    public static final ItemType MUSIC_DISC_LAVA_CHICKEN = init();
     @Nullable
     public static final ItemType MUSIC_DISC_MALL = init();
     @Nullable
@@ -2202,6 +2216,8 @@ public final class ItemTypes {
     @Nullable
     public static final ItemType SHIELD = init();
     @Nullable
+    public static final ItemType SHORT_DRY_GRASS = init();
+    @Nullable
     public static final ItemType SHORT_GRASS = init();
     @Nullable
     public static final ItemType SHROOMLIGHT = init();
@@ -2453,11 +2469,17 @@ public final class ItemTypes {
     @Nullable
     public static final ItemType TADPOLE_SPAWN_EGG = init();
     @Nullable
+    public static final ItemType TALL_DRY_GRASS = init();
+    @Nullable
     public static final ItemType TALL_GRASS = init();
     @Nullable
     public static final ItemType TARGET = init();
     @Nullable
     public static final ItemType TERRACOTTA = init();
+    @Nullable
+    public static final ItemType TEST_BLOCK = init();
+    @Nullable
+    public static final ItemType TEST_INSTANCE_BLOCK = init();
     @Nullable
     public static final ItemType TIDE_ARMOR_TRIM_SMITHING_TEMPLATE = init();
     @Nullable
@@ -2715,6 +2737,8 @@ public final class ItemTypes {
     public static final ItemType WHITE_WOOL = init();
     @Nullable
     public static final ItemType WILD_ARMOR_TRIM_SMITHING_TEMPLATE = init();
+    @Nullable
+    public static final ItemType WILDFLOWERS = init();
     @Nullable
     public static final ItemType WIND_CHARGE = init();
     @Nullable
