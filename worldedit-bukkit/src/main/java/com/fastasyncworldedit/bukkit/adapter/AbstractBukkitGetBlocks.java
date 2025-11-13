@@ -12,6 +12,8 @@ import com.fastasyncworldedit.core.queue.implementation.QueueHandler;
 import com.fastasyncworldedit.core.queue.implementation.blocks.CharGetBlocks;
 import com.fastasyncworldedit.core.util.MemUtil;
 import com.google.common.util.concurrent.Futures;
+import com.fastasyncworldedit.core.util.task.FaweThreadUtil;
+import com.sk89q.worldedit.extent.Extent;
 import com.sk89q.worldedit.internal.util.LogManagerCompat;
 import com.sk89q.worldedit.util.formatting.text.TextComponent;
 import org.apache.logging.log4j.Logger;
@@ -120,8 +122,7 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
             ServerLevel nmsWorld
     ) {
         try {
-            // TheArcFox - wrapped to run task on region scheduler
-            return internalCallWrapped(set, finalizer, copyKey, nmsChunk, nmsWorld);
+            return internalCall(set, finalizer, copyKey, nmsChunk, nmsWorld);
         } catch (Throwable e) {
             LOGGER.error("Error performing chunk call at chunk {},{}", chunkX, chunkZ, e);
             return null;
@@ -157,8 +158,7 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
                 }
             };
             //noinspection unchecked - required at compile time
-            // TheArcFox - running tasks sequentially
-            return (T) (Future) Futures.immediateFuture(chain.call());
+            return (T) (Future) queueHandler.sync(chain);
         } else {
             if (callback != null) {
                 callback.run();

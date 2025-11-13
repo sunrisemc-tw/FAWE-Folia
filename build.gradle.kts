@@ -1,40 +1,18 @@
 import org.ajoberstar.grgit.Grgit
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
 import org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED
-import java.net.URI
 import java.time.format.DateTimeFormatter
 import xyz.jpenilla.runpaper.task.RunServer
 
 plugins {
-    id("io.github.gradle-nexus.publish-plugin") version "2.0.0"
-    id("xyz.jpenilla.run-paper") version "2.3.1"
+    alias(libs.plugins.codecov)
+    jacoco
+    id("buildlogic.common")
+    id("com.gradleup.nmcp.aggregation") version "1.2.0"
+    id("xyz.jpenilla.run-paper") version "3.0.2"
 }
 
-if (!File("$rootDir/.git").exists()) {
-    logger.lifecycle("""
-    **************************************************************************************
-    You need to fork and clone this repository! Don't download a .zip file.
-    If you need assistance, consult the GitHub docs: https://docs.github.com/get-started/quickstart/fork-a-repo
-    **************************************************************************************
-    """.trimIndent()
-    ).also { kotlin.system.exitProcess(1) }
-}
-
-logger.lifecycle("""
-*******************************************
- You are building FastAsyncWorldEdit!
-
- If you encounter trouble:
- 1) Read COMPILING.adoc if you haven't yet
- 2) Try running 'build' in a separate Gradle run
- 3) Use gradlew and not gradle
- 4) If you still need help, ask on Discord! https://discord.gg/intellectualsites
-
- Output files will be in [subproject]/build/libs
-*******************************************
-""")
-
-var rootVersion by extra("2.13.1")
+var rootVersion by extra("2.14.1")
 var snapshot by extra("SNAPSHOT")
 var revision: String by extra("")
 var buildNumber by extra("")
@@ -65,12 +43,45 @@ if (!project.hasProperty("gitCommitHash")) {
     }
 }
 
+val totalReport = tasks.register<JacocoReport>("jacocoTotalReport") {
+    for (proj in subprojects) {
+        proj.apply(plugin = "jacoco")
+        proj.plugins.withId("java") {
+            executionData(
+                    fileTree(proj.layout.buildDirectory).include("**/jacoco/*.exec")
+            )
+            sourceSets(proj.the<JavaPluginExtension>().sourceSets["main"])
+            reports {
+                xml.required.set(true)
+                xml.outputLocation.set(rootProject.layout.buildDirectory.file("reports/jacoco/report.xml"))
+                html.required.set(true)
+            }
+            dependsOn(proj.tasks.named("test"))
+        }
+    }
+}
+afterEvaluate {
+    totalReport.configure {
+        classDirectories.setFrom(classDirectories.files.map {
+            fileTree(it).apply {
+                exclude("**/*AutoValue_*")
+                exclude("**/*Registration.*")
+            }
+        })
+    }
+}
+
+codecov {
+    reportTask.set(totalReport)
+}
+
 allprojects {
     gradle.projectsEvaluated {
-        tasks.withType(JavaCompile::class) {
+        tasks.withType<JavaCompile>().configureEach {
             options.compilerArgs.addAll(arrayOf("-Xmaxerrs", "1000"))
         }
-        tasks.withType(Test::class) {
+        tasks.withType<Test>().configureEach {
+            maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).takeIf { it > 0 } ?: 1
             testLogging {
                 events(FAILED)
                 exceptionFormat = FULL
@@ -82,8 +93,7 @@ allprojects {
     }
 }
 
-applyCommonConfiguration()
-val supportedVersions = listOf("1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.4", "1.21.5", "1.21.7")
+val supportedVersions: List<String> = listOf("1.20.4", "1.20.5", "1.20.6", "1.21", "1.21.1", "1.21.4", "1.21.5", "1.21.8", "1.21.10")
 
 tasks {
     supportedVersions.forEach {
@@ -96,19 +106,21 @@ tasks {
             runDirectory.set(file("run-$it"))
         }
     }
-    runServer {
-        minecraftVersion("1.21.7")
+    runServer<RunServer> {
+        minecraftVersion(supportedVersions.last())
         pluginJars(*project(":worldedit-bukkit").getTasksByName("shadowJar", false).map { (it as Jar).archiveFile }
                 .toTypedArray())
+        jvmArgs("-Dcom.mojang.eula.agree=true")
 
     }
 }
 
-nexusPublishing {
-    this.repositories {
-        sonatype {
-            nexusUrl.set(URI.create("https://s01.oss.sonatype.org/service/local/"))
-            snapshotRepositoryUrl.set(URI.create("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
-        }
+nmcpAggregation {
+    centralPortal {
+        publishingType = "AUTOMATIC"
+        username = providers.gradleProperty("mavenCentralUsername")
+        password = providers.gradleProperty("mavenCentralPassword")
     }
+
+    publishAllProjectsProbablyBreakingProjectIsolation()
 }

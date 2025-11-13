@@ -28,6 +28,8 @@ import com.google.common.collect.Sets;
 import com.google.common.util.concurrent.Futures;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.Lifecycle;
+import com.sk89q.worldedit.EditSession;
+import com.sk89q.worldedit.MaxChangedBlocksException;
 import com.sk89q.worldedit.WorldEditException;
 import com.sk89q.worldedit.blocks.BaseItem;
 import com.sk89q.worldedit.blocks.BaseItemStack;
@@ -62,6 +64,8 @@ import com.sk89q.worldedit.world.block.BlockStateHolder;
 import com.sk89q.worldedit.world.block.BlockType;
 import com.sk89q.worldedit.world.block.BlockTypes;
 import com.sk89q.worldedit.world.entity.EntityTypes;
+import com.sk89q.worldedit.world.generation.ConfiguredFeatureType;
+import com.sk89q.worldedit.world.generation.StructureType;
 import com.sk89q.worldedit.world.item.ItemType;
 import net.minecraft.SharedConstants;
 import net.minecraft.Util;
@@ -69,6 +73,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.HolderSet;
 import net.minecraft.core.Registry;
+import net.minecraft.core.SectionPos;
 import net.minecraft.core.component.DataComponentPatch;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.ByteArrayTag;
@@ -120,6 +125,10 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 import net.minecraft.world.level.dimension.LevelStem;
 import net.minecraft.world.level.levelgen.WorldOptions;
+import net.minecraft.world.level.levelgen.feature.ConfiguredFeature;
+import net.minecraft.world.level.levelgen.structure.BoundingBox;
+import net.minecraft.world.level.levelgen.structure.Structure;
+import net.minecraft.world.level.levelgen.structure.StructureStart;
 import net.minecraft.world.level.storage.LevelStorageSource;
 import net.minecraft.world.level.storage.PrimaryLevelData;
 import net.minecraft.world.phys.BlockHitResult;
@@ -867,6 +876,20 @@ public final class PaperweightAdapter implements BukkitImplAdapter<net.minecraft
             }
         }
 
+        // Features
+        for (ResourceLocation name: server.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE).keySet()) {
+            if (ConfiguredFeatureType.REGISTRY.get(name.toString()) == null) {
+                ConfiguredFeatureType.REGISTRY.register(name.toString(), new ConfiguredFeatureType(name.toString()));
+            }
+        }
+
+        // Structures
+        for (ResourceLocation name : server.registryAccess().lookupOrThrow(Registries.STRUCTURE).keySet()) {
+            if (StructureType.REGISTRY.get(name.toString()) == null) {
+                StructureType.REGISTRY.register(name.toString(), new StructureType(name.toString()));
+            }
+        }
+
         // BiomeCategories
         Registry<Biome> biomeRegistry = server.registryAccess().lookupOrThrow(Registries.BIOME);
         biomeRegistry.getTags().forEach(tag -> {
@@ -883,6 +906,60 @@ public final class PaperweightAdapter implements BukkitImplAdapter<net.minecraft
                 );
             }
         });
+    }
+
+    public boolean generateFeature(ConfiguredFeatureType type, World world, EditSession session, BlockVector3 pt) {
+        ServerLevel originalWorld = ((CraftWorld) world).getHandle();
+        ConfiguredFeature<?, ?> feature = originalWorld.registryAccess().lookupOrThrow(Registries.CONFIGURED_FEATURE).getValue(ResourceLocation.tryParse(type.id()));
+        ServerChunkCache chunkManager = originalWorld.getChunkSource();
+        try (PaperweightServerLevelDelegateProxy.LevelAndProxy proxyLevel =
+                     PaperweightServerLevelDelegateProxy.newInstance(session, originalWorld, this)) {
+            return feature != null && feature.place(proxyLevel.level(), chunkManager.getGenerator(), random, new BlockPos(pt.x(), pt.y(), pt.z()));
+        } catch (MaxChangedBlocksException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    public boolean generateStructure(StructureType type, World world, EditSession session, BlockVector3 pt) {
+        ServerLevel originalWorld = ((CraftWorld) world).getHandle();
+        Registry<Structure> structureRegistry = originalWorld.registryAccess().lookupOrThrow(Registries.STRUCTURE);
+        Structure structure = structureRegistry.getValue(ResourceLocation.tryParse(type.id()));
+        if (structure == null) {
+            return false;
+        }
+
+        ServerChunkCache chunkManager = originalWorld.getChunkSource();
+        try (PaperweightServerLevelDelegateProxy.LevelAndProxy proxyLevel =
+                     PaperweightServerLevelDelegateProxy.newInstance(session, originalWorld, this)) {
+            ChunkPos chunkPos = new ChunkPos(new BlockPos(pt.x(), pt.y(), pt.z()));
+            StructureStart structureStart = structure.generate(
+                    structureRegistry.wrapAsHolder(structure), originalWorld.dimension(), originalWorld.registryAccess(),
+                    chunkManager.getGenerator(), chunkManager.getGenerator().getBiomeSource(), chunkManager.randomState(),
+                    originalWorld.getStructureManager(), originalWorld.getSeed(), chunkPos, 0,
+                    proxyLevel.level(), biome -> true
+            );
+
+            if (!structureStart.isValid()) {
+                return false;
+            } else {
+                BoundingBox boundingBox = structureStart.getBoundingBox();
+                ChunkPos min = new ChunkPos(SectionPos.blockToSectionCoord(boundingBox.minX()), SectionPos.blockToSectionCoord(boundingBox.minZ()));
+                ChunkPos max = new ChunkPos(SectionPos.blockToSectionCoord(boundingBox.maxX()), SectionPos.blockToSectionCoord(boundingBox.maxZ()));
+                ChunkPos.rangeClosed(min, max).forEach((chunkPosx) ->
+                        structureStart.placeInChunk(
+                                proxyLevel.level(), originalWorld.structureManager(), chunkManager.getGenerator(),
+                                originalWorld.getRandom(),
+                                new BoundingBox(
+                                        chunkPosx.getMinBlockX(), originalWorld.getMinY(), chunkPosx.getMinBlockZ(),
+                                        chunkPosx.getMaxBlockX(), originalWorld.getMaxY(), chunkPosx.getMaxBlockZ()
+                                ), chunkPosx
+                        )
+                );
+                return true;
+            }
+        } catch (MaxChangedBlocksException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @Override
@@ -959,46 +1036,7 @@ public final class PaperweightAdapter implements BukkitImplAdapter<net.minecraft
      */
     @Override
     public net.minecraft.nbt.Tag fromNativeLin(LinTag<?> foreign) {
-        if (foreign == null) {
-            return null;
-        }
-        if (foreign instanceof LinCompoundTag compoundTag) {
-            net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
-            for (var entry : compoundTag.value().entrySet()) {
-                tag.put(entry.getKey(), fromNativeLin(entry.getValue()));
-            }
-            return tag;
-        } else if (foreign instanceof LinByteTag byteTag) {
-            return net.minecraft.nbt.ByteTag.valueOf(byteTag.valueAsByte());
-        } else if (foreign instanceof LinByteArrayTag byteArrayTag) {
-            return new net.minecraft.nbt.ByteArrayTag(byteArrayTag.value());
-        } else if (foreign instanceof LinDoubleTag doubleTag) {
-            return net.minecraft.nbt.DoubleTag.valueOf(doubleTag.valueAsDouble());
-        } else if (foreign instanceof LinFloatTag floatTag) {
-            return net.minecraft.nbt.FloatTag.valueOf(floatTag.valueAsFloat());
-        } else if (foreign instanceof LinIntTag intTag) {
-            return net.minecraft.nbt.IntTag.valueOf(intTag.valueAsInt());
-        } else if (foreign instanceof LinIntArrayTag intArrayTag) {
-            return new net.minecraft.nbt.IntArrayTag(intArrayTag.value());
-        } else if (foreign instanceof LinLongArrayTag longArrayTag) {
-            return new net.minecraft.nbt.LongArrayTag(longArrayTag.value());
-        } else if (foreign instanceof LinListTag<?> listTag) {
-            net.minecraft.nbt.ListTag tag = new net.minecraft.nbt.ListTag();
-            for (var t : listTag.value()) {
-                tag.add(fromNativeLin(t));
-            }
-            return tag;
-        } else if (foreign instanceof LinLongTag longTag) {
-            return net.minecraft.nbt.LongTag.valueOf(longTag.valueAsLong());
-        } else if (foreign instanceof LinShortTag shortTag) {
-            return net.minecraft.nbt.ShortTag.valueOf(shortTag.valueAsShort());
-        } else if (foreign instanceof LinStringTag stringTag) {
-            return net.minecraft.nbt.StringTag.valueOf(stringTag.value());
-        } else if (foreign instanceof LinEndTag) {
-            return net.minecraft.nbt.EndTag.INSTANCE;
-        } else {
-            throw new IllegalArgumentException("Don't know how to make NMS " + foreign.getClass().getCanonicalName());
-        }
+        return this.fromNative(foreign);
     }
 
     private static byte identifyRawElementType(net.minecraft.nbt.ListTag list) {

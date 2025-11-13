@@ -42,7 +42,6 @@ import net.minecraft.util.ThreadingDetector;
 import net.minecraft.util.ZeroBitStorage;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.ChunkPos;
-import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelAccessor;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.block.Block;
@@ -81,6 +80,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
@@ -115,7 +115,6 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
     private static final Logger LOGGER = LogManagerCompat.getLogger();
 
-    private static Method PAPER_CHUNK_GEN_ALL_ENTITIES;
     private static Field SERVER_LEVEL_ENTITY_MANAGER;
 
     static final MethodHandle PALETTED_CONTAINER_GET;
@@ -163,6 +162,8 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
                 fieldThreadingDetector.setAccessible(true);
                 fieldLock = ThreadingDetector.class.getDeclaredField(Refraction.pickName("lock", "c"));
                 fieldLock.setAccessible(true);
+                SERVER_LEVEL_ENTITY_MANAGER = ServerLevel.class.getDeclaredField(Refraction.pickName("entityManager", "P"));
+                SERVER_LEVEL_ENTITY_MANAGER.setAccessible(true);
             } else {
                 // in paper, the used methods are synchronized properly
                 fieldThreadingDetector = null;
@@ -188,16 +189,6 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
             fieldRemove = BlockEntity.class.getDeclaredField(Refraction.pickName("remove", "p"));
             fieldRemove.setAccessible(true);
-
-            try {
-                Level.class.getDeclaredMethod("moonrise$getEntityLookup");
-                PAPER_CHUNK_GEN_ALL_ENTITIES = ChunkEntitySlices.class.getDeclaredMethod("getAllEntities");
-                PAPER_CHUNK_GEN_ALL_ENTITIES.setAccessible(true);
-            } catch (NoSuchMethodException ignored) {
-                // Non-Paper
-                SERVER_LEVEL_ENTITY_MANAGER = ServerLevel.class.getDeclaredField(Refraction.pickName("entityManager", "P"));
-                SERVER_LEVEL_ENTITY_MANAGER.setAccessible(true);
-            }
 
             Method palettedContainerGet = PalettedContainer.class.getDeclaredMethod(
                     Refraction.pickName("get", "a"),
@@ -467,8 +458,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             }
 
             int bitsPerEntryNonZero = Math.max(bitsPerEntry, 1); // We do want to use zero sometimes
-            final int blocksPerLong = MathMan.floorZero((double) 64 / bitsPerEntryNonZero);
-            final int blockBitArrayEnd = MathMan.ceilZero((float) 4096 / blocksPerLong);
+            final int blockBitArrayEnd = MathMan.longArrayLength(bitsPerEntryNonZero, 4096);
 
             if (num_palette == 1) {
                 for (int i = 0; i < blockBitArrayEnd; i++) {
@@ -625,8 +615,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         }
 
         int bitsPerEntryNonZero = Math.max(bitsPerEntry, 1); // We do want to use zero sometimes
-        final int blocksPerLong = MathMan.floorZero((double) 64 / bitsPerEntryNonZero);
-        final int arrayLength = MathMan.ceilZero(64f / blocksPerLong);
+        final int arrayLength = MathMan.longArrayLength(bitsPerEntryNonZero, 64);
 
 
         BitStorage bitStorage = bitsPerEntry == 0 ? new ZeroBitStorage(64) : new SimpleBitStorage(
@@ -697,14 +686,9 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
     static List<Entity> getEntities(LevelChunk chunk) {
         if (PaperLib.isPaper()) {
-            try {
-                //noinspection unchecked
-                return (List<Entity>) PAPER_CHUNK_GEN_ALL_ENTITIES.invoke(chunk.level
-                        .moonrise$getEntityLookup()
-                        .getChunk(chunk.locX, chunk.locZ));
-            } catch (IllegalAccessException | InvocationTargetException e) {
-                throw new RuntimeException("Failed to lookup entities [PAPER=true]", e);
-            }
+            return Optional.ofNullable(chunk.level
+                    .moonrise$getEntityLookup()
+                    .getChunk(chunk.locX, chunk.locZ)).map(ChunkEntitySlices::getAllEntities).orElse(Collections.emptyList());
         }
         try {
             //noinspection unchecked

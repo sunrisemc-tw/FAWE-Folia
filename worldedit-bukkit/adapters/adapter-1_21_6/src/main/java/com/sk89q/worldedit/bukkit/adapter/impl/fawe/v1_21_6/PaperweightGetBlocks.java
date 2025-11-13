@@ -613,7 +613,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                     set.getMaxSectionPosition()
             );
 
-            Runnable[] syncTasks = null;
+            List<Runnable> syncTasks = new ArrayList<>();
 
             int bx = chunkX << 4;
             int bz = chunkZ << 4;
@@ -622,24 +622,17 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
             // list will be null on spigot, so this is an implicit isPaper check
             if (beacons != null && !beacons.isEmpty()) {
                 final List<BlockEntity> finalBeacons = beacons;
-
-                syncTasks = new Runnable[4];
-
-                syncTasks[3] = () -> {
+                syncTasks.add(() -> {
                     for (BlockEntity beacon : finalBeacons) {
                         BeaconBlockEntity.playSound(beacon.getLevel(), beacon.getBlockPos(), SoundEvents.BEACON_DEACTIVATE);
                         new BeaconDeactivatedEvent(CraftBlock.at(beacon.getLevel(), beacon.getBlockPos())).callEvent();
                     }
-                };
+                });
             }
 
             Set<UUID> entityRemoves = Collections.synchronizedSet(set.getEntityRemoves());
             if (entityRemoves != null && !entityRemoves.isEmpty()) {
-                if (syncTasks == null) {
-                    syncTasks = new Runnable[3];
-                }
-
-                syncTasks[2] = () -> {
+                syncTasks.add(() -> {
                     Set<UUID> entitiesRemoved = new HashSet<>();
                     final List<Entity> entities = PaperweightPlatformAdapter.getEntities(nmsChunk);
 
@@ -665,16 +658,12 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                     // Only save entities that were actually removed to history
                     set.getEntityRemoves().clear();
                     set.getEntityRemoves().addAll(entitiesRemoved);
-                };
+                });
             }
 
             Collection<FaweCompoundTag> entities = Collections.synchronizedCollection(set.entities());
             if (entities != null && !entities.isEmpty()) {
-                if (syncTasks == null) {
-                    syncTasks = new Runnable[2];
-                }
-
-                syncTasks[1] = () -> {
+                syncTasks.add(() -> {
                     Iterator<FaweCompoundTag> iterator = entities.iterator();
                     while (iterator.hasNext()) {
                         final FaweCompoundTag nativeTag = iterator.next();
@@ -721,17 +710,13 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                             }
                         }
                     }
-                };
+                });
             }
 
             // set tiles
             Map<BlockVector3, FaweCompoundTag> tiles = Collections.synchronizedMap(set.tiles());
             if (tiles != null && !tiles.isEmpty()) {
-                if (syncTasks == null) {
-                    syncTasks = new Runnable[1];
-                }
-
-                syncTasks[0] = () -> {
+                syncTasks.add(() -> {
                     for (final Map.Entry<BlockVector3, FaweCompoundTag> entry : tiles.entrySet()) {
                         final FaweCompoundTag nativeTag = entry.getValue();
                         final BlockVector3 blockHash = entry.getKey();
@@ -757,7 +742,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                             }
                         }
                     }
-                };
+                });
             }
 
             Runnable callback;
@@ -765,11 +750,12 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                 callback = null;
             } else {
                 int finalMask = bitMask != 0 ? bitMask : lightUpdate ? set.getBitMask() : 0;
-                callback = () -> {
+                syncTasks.add(() -> {
                     // Set Modified
-                    nmsChunk.setLightCorrect(true); // Set Modified
+                    nmsChunk.setLightCorrect(true);
                     nmsChunk.mustNotSave = false;
-                    nmsChunk.markUnsaved();
+                });
+                callback = () -> {
                     // send to player
                     if (!set
                             .getSideEffectSet()
@@ -1028,19 +1014,29 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
 
     @Override
     @SuppressWarnings("unchecked")
-    public synchronized boolean trim(boolean aggressive) {
-        skyLight = new DataLayer[getSectionCount()];
-        blockLight = new DataLayer[getSectionCount()];
+    public boolean trim(boolean aggressive) {
+        synchronized (this) {
+            if (sections == null && (!aggressive || levelChunk == null)) {
+                skyLight = new DataLayer[getSectionCount()];
+                blockLight = new DataLayer[getSectionCount()];
+                return !aggressive || super.trim(true);
+            }
+        }
         if (aggressive) {
             sectionLock.writeLock().lock();
-            sections = null;
-            levelChunk = null;
-            sectionLock.writeLock().unlock();
-            return super.trim(true);
-        } else if (sections == null) {
-            // don't bother trimming if there are no sections stored.
-            return true;
-        } else {
+            try {
+                synchronized (this) {
+                    skyLight = new DataLayer[getSectionCount()];
+                    blockLight = new DataLayer[getSectionCount()];
+                    sections = null;
+                    levelChunk = null;
+                    return super.trim(true);
+                }
+            } finally {
+                sectionLock.writeLock().unlock();
+            }
+        }
+        synchronized (this) {
             for (int i = getMinSectionPosition(); i <= getMaxSectionPosition(); i++) {
                 int layer = i - getMinSectionPosition();
                 if (!hasSection(i) || super.blocks[layer] == null) {

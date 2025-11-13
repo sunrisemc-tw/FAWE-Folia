@@ -202,7 +202,13 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
             // Un-nest neighbour updating
             for (Direction direction : NEIGHBOUR_ORDER) {
                 BlockPos shifted = blockPos.relative(direction);
-                level.getBlockState(shifted).handleNeighborChanged(level, shifted, oldState.getBlock(), ExperimentalRedstoneUtils.initialOrientation(level, null, null), false);
+                level.getBlockState(shifted).handleNeighborChanged(
+                        level,
+                        shifted,
+                        oldState.getBlock(),
+                        ExperimentalRedstoneUtils.initialOrientation(level, null, null),
+                        false
+                );
             }
         }
         if (newState.hasAnalogOutputSignal()) {
@@ -239,7 +245,11 @@ public class PaperweightFaweWorldNativeAccess implements WorldNativeAccess<Level
     }
 
     @Override
-    public void updateBlock(BlockPos pos, net.minecraft.world.level.block.state.BlockState oldState, net.minecraft.world.level.block.state.BlockState newState) {
+    public void updateBlock(
+            BlockPos pos,
+            net.minecraft.world.level.block.state.BlockState oldState,
+            net.minecraft.world.level.block.state.BlockState newState
+    ) {
         Level world = getLevel();
         newState.onPlace(world, pos, oldState, false);
     }

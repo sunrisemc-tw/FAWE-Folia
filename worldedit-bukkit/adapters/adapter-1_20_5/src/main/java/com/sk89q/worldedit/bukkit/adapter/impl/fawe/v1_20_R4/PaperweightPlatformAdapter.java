@@ -77,6 +77,7 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.FutureTask;
@@ -453,8 +454,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             }
 
             int bitsPerEntryNonZero = Math.max(bitsPerEntry, 1); // We do want to use zero sometimes
-            final int blocksPerLong = MathMan.floorZero((double) 64 / bitsPerEntryNonZero);
-            final int blockBitArrayEnd = MathMan.ceilZero((float) 4096 / blocksPerLong);
+            final int blockBitArrayEnd = MathMan.longArrayLength(bitsPerEntryNonZero, 4096);
 
             if (num_palette == 1) {
                 for (int i = 0; i < blockBitArrayEnd; i++) {
@@ -611,8 +611,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         }
 
         int bitsPerEntryNonZero = Math.max(bitsPerEntry, 1); // We do want to use zero sometimes
-        final int blocksPerLong = MathMan.floorZero((double) 64 / bitsPerEntryNonZero);
-        final int arrayLength = MathMan.ceilZero(64f / blocksPerLong);
+        final int arrayLength = MathMan.longArrayLength(bitsPerEntryNonZero, 64);
 
 
         BitStorage bitStorage = bitsPerEntry == 0 ? new ZeroBitStorage(64) : new SimpleBitStorage(
@@ -685,12 +684,16 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         ExceptionCollector<RuntimeException> collector = new ExceptionCollector<>();
         if (PaperLib.isPaper()) {
             if (POST_CHUNK_REWRITE) {
-                try {
-                    //noinspection unchecked
-                    return (List<Entity>) PAPER_CHUNK_GEN_ALL_ENTITIES.invoke(chunk.level.getEntityLookup().getChunk(chunk.locX, chunk.locZ));
-                } catch (IllegalAccessException | InvocationTargetException e) {
-                    throw new RuntimeException("Failed to lookup entities [POST_CHUNK_REWRITE=true]", e);
-                }
+                return Optional.ofNullable(chunk.level
+                        .getEntityLookup()
+                        .getChunk(chunk.locX, chunk.locZ)).map(c -> {
+                    try {
+                        //noinspection unchecked
+                        return (List<Entity>) PAPER_CHUNK_GEN_ALL_ENTITIES.invoke(c);
+                    } catch (IllegalAccessException | InvocationTargetException e) {
+                        throw new RuntimeException("Failed to lookup entities [PAPER=true]", e);
+                    }
+                }).orElse(Collections.emptyList());
             }
             try {
                 EntityList entityList = (EntityList) LEVEL_CHUNK_ENTITIES.get(chunk);
