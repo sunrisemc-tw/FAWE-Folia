@@ -586,7 +586,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<Tag, ServerLevel> 
                 .getValue(ResourceLocation.tryParse(feature.id()));
 
         FaweBlockStateListPopulator populator = new FaweBlockStateListPopulator(serverLevel);
-        List<CraftBlockState> placed = TaskManager.taskManager().sync(() -> {
+        List<CraftBlockState> placed = TaskManager.taskManager().syncAt(() -> {
             preCaptureStates(serverLevel);
             try {
                 if (!configuredFeature.place(
@@ -603,7 +603,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<Tag, ServerLevel> 
             } finally {
                 postCaptureBlockStates(serverLevel);
             }
-        });
+        }, new com.sk89q.worldedit.util.Location(editSession, pt.toVector3()));
 
         return placeFeatureIntoSession(editSession, populator, placed);
     }
@@ -622,7 +622,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<Tag, ServerLevel> 
         ChunkPos chunkPos = new ChunkPos(new BlockPos(pt.x(), pt.y(), pt.z()));
 
         FaweBlockStateListPopulator populator = new FaweBlockStateListPopulator(serverLevel);
-        List<CraftBlockState> placed = TaskManager.taskManager().sync(() -> {
+        List<CraftBlockState> placed = TaskManager.taskManager().syncAt(() -> {
             preCaptureStates(serverLevel);
             try {
                 StructureStart structureStart = structure.generate(
@@ -673,7 +673,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<Tag, ServerLevel> 
             } finally {
                 postCaptureBlockStates(serverLevel);
             }
-        });
+        }, BukkitAdapter.adapt(world), chunkPos.x, chunkPos.z);
 
         return placeFeatureIntoSession(editSession, populator, placed);
     }

@@ -605,7 +605,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
                 .get(ResourceLocation.tryParse(feature.id()));
 
         FaweBlockStateListPopulator populator = new FaweBlockStateListPopulator(serverLevel);
-        List<CraftBlockState> placed = TaskManager.taskManager().sync(() -> {
+        List<CraftBlockState> placed = TaskManager.taskManager().syncAt(() -> {
             preCaptureStates(serverLevel);
             try {
                 if (!configuredFeature.place(
@@ -622,7 +622,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
             } finally {
                 postCaptureBlockStates(serverLevel);
             }
-        });
+        }, new com.sk89q.worldedit.util.Location(editSession, pt.toVector3()));
 
         return placeFeatureIntoSession(editSession, populator, placed);
         //FAWE end
@@ -645,7 +645,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
 
         //FAWE start
         FaweBlockStateListPopulator populator = new FaweBlockStateListPopulator(serverLevel);
-        List<CraftBlockState> placed = TaskManager.taskManager().sync(() -> {
+        List<CraftBlockState> placed = TaskManager.taskManager().syncAt(() -> {
             preCaptureStates(serverLevel);
             try {
                 StructureStart structureStart = k.generate(
@@ -694,7 +694,7 @@ public final class PaperweightFaweAdapter extends FaweAdapter<net.minecraft.nbt.
             } finally {
                 postCaptureBlockStates(serverLevel);
             }
-        });
+        }, BukkitAdapter.adapt(world), chunkPos.x, chunkPos.z);
 
         return placeFeatureIntoSession(editSession, populator, placed);
         //FAWE end
