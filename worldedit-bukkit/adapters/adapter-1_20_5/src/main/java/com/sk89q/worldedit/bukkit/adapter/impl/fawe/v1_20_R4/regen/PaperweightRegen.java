@@ -223,6 +223,7 @@ public class PaperweightRegen extends Regenerator {
                         }
                     }
 
+                    level.serverLevelData.setInitialized(true);
                     return level;
                 }, server.executor).join();
         freshWorld.noSave = true;
