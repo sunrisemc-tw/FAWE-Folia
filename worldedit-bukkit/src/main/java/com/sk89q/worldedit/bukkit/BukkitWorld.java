@@ -214,8 +214,9 @@ public class BukkitWorld extends AbstractWorld {
 
     @Override
     public int removeEntities(final Region region) {
+        // todo: TheArcFox - move it to region scheduler?
         List<com.sk89q.worldedit.entity.Entity> entities = getEntities(region);
-        return TaskManager.taskManager().sync(() -> entities.stream()
+        return TaskManager.taskManager().syncGlobal(() -> entities.stream()
                 .mapToInt(entity -> entity.remove() ? 1 : 0).sum()
         );
     }

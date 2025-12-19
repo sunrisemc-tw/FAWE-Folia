@@ -19,6 +19,8 @@
 
 package com.sk89q.worldedit.bukkit;
 
+import com.fastasyncworldedit.bukkit.util.FoliaTaskManager;
+import com.fastasyncworldedit.core.util.FoliaSupport;
 import com.fastasyncworldedit.core.util.TaskManager;
 import com.sk89q.worldedit.bukkit.adapter.BukkitImplAdapter;
 import com.sk89q.worldedit.entity.BaseEntity;
@@ -113,19 +115,35 @@ public class BukkitEntity implements Entity {
     public boolean remove() {
         // synchronize the whole method, not just the remove operation as we always need to synchronize and
         // can make sure the entity reference was not invalidated in the few milliseconds between the next available tick (lol)
-        return TaskManager.taskManager().sync(() -> {
-            org.bukkit.entity.Entity entity = entityRef.get();
-            if (entity != null) {
-                try {
-                    entity.remove();
-                } catch (UnsupportedOperationException e) {
-                    return false;
+        if (FoliaSupport.isFolia()) {
+            return TaskManager.taskManager().syncGlobal(() -> {
+                org.bukkit.entity.Entity entity = entityRef.get();
+                if (entity != null) {
+                    try {
+                        entity.remove();
+                    } catch (UnsupportedOperationException e) {
+                        return false;
+                    }
+                    return entity.isDead();
+                } else {
+                    return true;
                 }
-                return entity.isDead();
-            } else {
-                return true;
-            }
-        });
+            });
+        } else {
+            return ((FoliaTaskManager) TaskManager.taskManager()).syncWith(() -> {
+                org.bukkit.entity.Entity entity = entityRef.get();
+                if (entity != null) {
+                    try {
+                        entity.remove();
+                    } catch (UnsupportedOperationException e) {
+                        return false;
+                    }
+                    return entity.isDead();
+                } else {
+                    return true;
+                }
+            }, entityRef.get());
+        }
     }
 
     @SuppressWarnings("unchecked")
