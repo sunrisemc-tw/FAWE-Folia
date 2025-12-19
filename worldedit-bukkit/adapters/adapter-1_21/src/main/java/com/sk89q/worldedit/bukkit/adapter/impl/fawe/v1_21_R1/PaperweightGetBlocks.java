@@ -18,6 +18,7 @@ import com.fastasyncworldedit.core.util.MathMan;
 import com.fastasyncworldedit.core.util.NbtUtils;
 import com.fastasyncworldedit.core.util.TaskManager;
 import com.fastasyncworldedit.core.util.collection.AdaptedMap;
+import com.google.common.util.concurrent.Futures;
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.BukkitEntity;
 import com.sk89q.worldedit.bukkit.WorldEditPlugin;
@@ -807,7 +808,7 @@ public class PaperweightGetBlocks extends AbstractBukkitGetBlocks<ServerLevel, L
                     }
                 };
                 //noinspection unchecked - required at compile time
-                return (T) (Future) queueHandler.sync(chain);
+                return (T) (Future) Futures.immediateFuture(chain);
             } else {
                 if (callback == null) {
                     if (finalizer != null) {
