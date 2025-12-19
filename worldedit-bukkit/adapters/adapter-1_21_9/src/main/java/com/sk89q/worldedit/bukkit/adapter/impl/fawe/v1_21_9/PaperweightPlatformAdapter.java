@@ -1,5 +1,6 @@
 package com.sk89q.worldedit.bukkit.adapter.impl.fawe.v1_21_9;
 
+import ca.spottedleaf.moonrise.common.util.TickThread;
 import ca.spottedleaf.moonrise.patches.chunk_system.level.entity.ChunkEntitySlices;
 import ca.spottedleaf.moonrise.patches.chunk_system.scheduling.ChunkHolderManager;
 import com.fastasyncworldedit.bukkit.adapter.CachedBukkitAdapter;
@@ -9,9 +10,11 @@ import com.fastasyncworldedit.core.Fawe;
 import com.fastasyncworldedit.core.FaweCache;
 import com.fastasyncworldedit.core.math.BitArrayUnstretched;
 import com.fastasyncworldedit.core.math.IntPair;
+import com.fastasyncworldedit.core.util.FoliaSupport;
 import com.fastasyncworldedit.core.util.MathMan;
 import com.fastasyncworldedit.core.util.TaskManager;
 import com.mojang.serialization.DataResult;
+import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldedit.bukkit.WorldEditPlugin;
 import com.sk89q.worldedit.bukkit.adapter.BukkitImplAdapter;
 import com.sk89q.worldedit.bukkit.adapter.Refraction;
@@ -74,8 +77,10 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.Semaphore;
 import java.util.function.IntFunction;
+import java.util.function.Supplier;
 import java.util.stream.LongStream;
 
 import static net.minecraft.core.registries.Registries.BIOME;
@@ -273,7 +278,9 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             return CompletableFuture.completedFuture(levelChunk);
         }
         if (PaperLib.isPaper()) {
-            CompletableFuture<LevelChunk> future = serverLevel
+            // TheArcFox - TODO should revert these changes
+            // as getChunkAtAsync bug is appeared to be folia bugs <1.21.3
+            FutureTask<CompletableFuture<LevelChunk>> future = new FutureTask<>(() -> serverLevel
                     .getWorld()
                     .getChunkAtAsync(chunkX, chunkZ, true, true)
                     .thenApply(chunk -> {
@@ -284,10 +291,11 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
                             LOGGER.error("Could not asynchronously load chunk at {},{}", chunkX, chunkZ, e);
                             return null;
                         }
-                    });
+                    }));
             try {
-                if (!future.isCompletedExceptionally() || (future.isDone() && future.get() != null)) {
-                    return future;
+                TaskManager.taskManager().task(future, BukkitAdapter.adapt(serverLevel.getWorld()), chunkX, chunkZ);
+                if (!(future.isDone() && future.get() != null)) {
+                    return future.get();
                 }
                 Throwable t = future.exceptionNow();
                 LOGGER.error("Asynchronous chunk load at {},{} exceptionally completed immediately", chunkX, chunkZ, t);
@@ -300,7 +308,9 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
                 );
             }
         }
-        return CompletableFuture.supplyAsync(() -> TaskManager.taskManager().sync(() -> serverLevel.getChunk(chunkX, chunkZ)));
+        // chunk is loaded now, can access it directly
+        // return CompletableFuture.supplyAsync(() -> serverLevel.getChunkSource().getChunkAtIfCachedImmediately(chunkX, chunkZ));
+        return CompletableFuture.supplyAsync(() -> serverLevel.getChunk(chunkX, chunkZ));
     }
 
     private static LevelChunk toLevelChunk(Chunk chunk) {
@@ -338,9 +348,15 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
 
     private static void addTicket(ServerLevel serverLevel, int chunkX, int chunkZ) {
         // Ensure chunk is definitely loaded before applying a ticket
-        io.papermc.paper.util.MCUtil.MAIN_EXECUTOR.execute(() -> serverLevel
+        final Runnable addChunkTicket = () -> serverLevel
                 .getChunkSource()
-                .addTicketWithRadius(ChunkHolderManager.UNLOAD_COOLDOWN, new ChunkPos(chunkX, chunkZ), 0));
+                .addTicketWithRadius(ChunkHolderManager.UNLOAD_COOLDOWN, new ChunkPos(chunkX, chunkZ), 0);
+        if (FoliaSupport.isFolia()) {
+            // run from any thread on Folia
+            addChunkTicket.run();
+            return;
+        }
+        io.papermc.paper.util.MCUtil.MAIN_EXECUTOR.execute(addChunkTicket);
     }
 
     public static ChunkHolder getPlayerChunk(ServerLevel nmsWorld, final int chunkX, final int chunkZ) {
@@ -373,7 +389,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         if (lockHolder.chunkLock == null) {
             return;
         }
-        MinecraftServer.getServer().execute(() -> {
+        TaskManager.taskManager().task(() -> {
             try {
                 ChunkPos pos = levelChunk.getPos();
                 ClientboundLevelChunkWithLightPacket packet;
@@ -398,7 +414,7 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
             } finally {
                 NMSAdapter.endChunkPacketSend(nmsWorld.getWorld().getName(), pair, lockHolder);
             }
-        });
+        }, BukkitAdapter.adapt(nmsWorld.getWorld()), chunkX, chunkZ);
     }
 
     private static List<ServerPlayer> nearbyPlayers(ServerLevel serverLevel, ChunkPos coordIntPair) {
@@ -641,4 +657,18 @@ public final class PaperweightPlatformAdapter extends NMSAdapter {
         }
     }
 
+    public static boolean isTickThreadFor(LevelChunk levelChunk) {
+        if (FoliaSupport.isFolia()) {
+            return TickThread.isTickThreadFor(levelChunk.level, levelChunk.locX, levelChunk.locZ);
+        }
+        return Fawe.isTickThread();
+    }
+
+    public static void task(Runnable task, ServerLevel level, int chunkX, int chunkZ) {
+        TaskManager.taskManager().task(task, BukkitAdapter.adapt(level.getWorld()), chunkX, chunkZ);
+    }
+
+    public static <T> T sync(Supplier<T> task, ServerLevel level, int chunkX, int chunkZ) {
+        return TaskManager.taskManager().syncAt(task, BukkitAdapter.adapt(level.getWorld()), chunkX, chunkZ);
+    }
 }
