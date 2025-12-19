@@ -18,6 +18,7 @@ import com.sk89q.worldedit.internal.util.LogManagerCompat;
 import com.sk89q.worldedit.util.formatting.text.TextComponent;
 import org.apache.logging.log4j.Logger;
 
+import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -122,7 +123,7 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
             ServerLevel nmsWorld
     ) {
         try {
-            return internalCall(set, finalizer, copyKey, nmsChunk, nmsWorld);
+            return internalCallWrapped(set, finalizer, copyKey, nmsChunk, nmsWorld);
         } catch (Throwable e) {
             LOGGER.error("Error performing chunk call at chunk {},{}", chunkX, chunkZ, e);
             return null;
@@ -131,17 +132,20 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
         }
     }
 
-    protected <T extends Future<T>> T handleCallFinalizer(Runnable[] syncTasks, Runnable callback, Runnable finalizer) throws
+    protected <T extends Future<T>> T handleCallFinalizer(
+            final List<Runnable> syncTasks,
+            final Runnable callback,
+            final Runnable finalizer
+    ) throws
             Exception {
-        if (syncTasks != null) {
+        if (!syncTasks.isEmpty()) {
             QueueHandler queueHandler = Fawe.instance().getQueueHandler();
-            Runnable[] finalSyncTasks = syncTasks;
 
             // Chain the sync tasks and the callback
             Callable<Future<?>> chain = () -> {
                 try {
                     // Run the sync tasks
-                    for (Runnable task : finalSyncTasks) {
+                    for (Runnable task : syncTasks) {
                         if (task != null) {
                             task.run();
                         }
@@ -158,7 +162,7 @@ public abstract class AbstractBukkitGetBlocks<ServerLevel, LevelChunk> extends C
                 }
             };
             //noinspection unchecked - required at compile time
-            return (T) (Future) queueHandler.sync(chain);
+            return (T) (Future) Futures.immediateFuture(chain.call());
         } else {
             if (callback != null) {
                 callback.run();
