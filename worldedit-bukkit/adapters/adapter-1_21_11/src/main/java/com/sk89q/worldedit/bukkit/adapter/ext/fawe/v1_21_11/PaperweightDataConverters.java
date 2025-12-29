@@ -39,8 +39,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.FloatTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
-import net.minecraft.nbt.StringTag;;
-        map.put("EntitySilverfish", Identifier.parse("silverfish"));
+import net.minecraft.nbt.StringTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
@@ -86,442 +85,443 @@ import java.util.stream.Collectors;
  * receive the source version in the compound
  * </p>
  */
-        @SuppressWarnings({ "rawtypes", "unchecked" })
-        class PaperweightDataConverters implements com.sk89q.worldedit.world.DataFixer {
+@SuppressWarnings({ "rawtypes", "unchecked" })
+class PaperweightDataConverters implements com.sk89q.worldedit.world.DataFixer {
 
-            @SuppressWarnings("unchecked")
-            @Override
-            public <T> T fixUp(FixType<T> type, T original, int srcVer) {
-                if (type == FixTypes.CHUNK) {
-                    return (T) fixChunk((LinCompoundTag) original, srcVer);
-                } else if (type == FixTypes.BLOCK_ENTITY) {
-                    return (T) fixBlockEntity((LinCompoundTag) original, srcVer);
-                } else if (type == FixTypes.ENTITY) {
-                    return (T) fixEntity((LinCompoundTag) original, srcVer);
-                } else if (type == FixTypes.BLOCK_STATE) {
-                    return (T) fixBlockState((String) original, srcVer);
-                } else if (type == FixTypes.ITEM_TYPE) {
-                    return (T) fixItemType((String) original, srcVer);
-                } else if (type == FixTypes.BIOME) {
-                    return (T) fixBiome((String) original, srcVer);
-                }
-                return original;
+    @SuppressWarnings("unchecked")
+    @Override
+    public <T> T fixUp(FixType<T> type, T original, int srcVer) {
+        if (type == FixTypes.CHUNK) {
+            return (T) fixChunk((LinCompoundTag) original, srcVer);
+        } else if (type == FixTypes.BLOCK_ENTITY) {
+            return (T) fixBlockEntity((LinCompoundTag) original, srcVer);
+        } else if (type == FixTypes.ENTITY) {
+            return (T) fixEntity((LinCompoundTag) original, srcVer);
+        } else if (type == FixTypes.BLOCK_STATE) {
+            return (T) fixBlockState((String) original, srcVer);
+        } else if (type == FixTypes.ITEM_TYPE) {
+            return (T) fixItemType((String) original, srcVer);
+        } else if (type == FixTypes.BIOME) {
+            return (T) fixBiome((String) original, srcVer);
+        }
+        return original;
+    }
+
+    private LinCompoundTag fixChunk(LinCompoundTag originalChunk, int srcVer) {
+        CompoundTag tag = (CompoundTag) adapter.fromNative(originalChunk);
+        CompoundTag fixed = convert(LegacyType.CHUNK, tag, srcVer);
+        return (LinCompoundTag) adapter.toNativeLin(fixed);
+    }
+
+    private LinCompoundTag fixBlockEntity(LinCompoundTag origTileEnt, int srcVer) {
+        CompoundTag tag = (CompoundTag) adapter.fromNative(origTileEnt);
+        CompoundTag fixed = convert(LegacyType.BLOCK_ENTITY, tag, srcVer);
+        return (LinCompoundTag) adapter.toNativeLin(fixed);
+    }
+
+    private LinCompoundTag fixEntity(LinCompoundTag origEnt, int srcVer) {
+        CompoundTag tag = (CompoundTag) adapter.fromNative(origEnt);
+        CompoundTag fixed = convert(LegacyType.ENTITY, tag, srcVer);
+        return (LinCompoundTag) adapter.toNativeLin(fixed);
+    }
+
+    private String fixBlockState(String blockState, int srcVer) {
+        CompoundTag stateNBT = stateToNBT(blockState);
+        Dynamic<Tag> dynamic = new Dynamic<>(OPS_NBT, stateNBT);
+        CompoundTag fixed = (CompoundTag) INSTANCE.fixer.update(References.BLOCK_STATE, dynamic, srcVer, DATA_VERSION).getValue();
+        return nbtToState(fixed);
+    }
+
+    private String nbtToState(CompoundTag tagCompound) {
+        StringBuilder sb = new StringBuilder();
+        sb.append(tagCompound.getString("Name").get());
+        tagCompound.getCompound("Properties").ifPresent(props -> {
+            sb.append('[');
+            sb.append(props.keySet().stream().map(k -> k + "=" + props.getString(k).get().replace("\"", "")).collect(Collectors.joining(",")));
+            sb.append(']');
+        });
+        return sb.toString();
+    }
+
+    private static CompoundTag stateToNBT(String blockState) {
+        int propIdx = blockState.indexOf('[');
+        CompoundTag tag = new CompoundTag();
+        if (propIdx < 0) {
+            tag.putString("Name", blockState);
+        } else {
+            tag.putString("Name", blockState.substring(0, propIdx));
+            CompoundTag propTag = new CompoundTag();
+            String props = blockState.substring(propIdx + 1, blockState.length() - 1);
+            String[] propArr = props.split(",");
+            for (String pair : propArr) {
+                final String[] split = pair.split("=");
+                propTag.putString(split[0], split[1]);
             }
+            tag.put("Properties", propTag);
+        }
+        return tag;
+    }
 
-            private LinCompoundTag fixChunk(LinCompoundTag originalChunk, int srcVer) {
-                CompoundTag tag = (CompoundTag) adapter.fromNative(originalChunk);
-                CompoundTag fixed = convert(LegacyType.CHUNK, tag, srcVer);
-                return (LinCompoundTag) adapter.toNativeLin(fixed);
+    private String fixBiome(String key, int srcVer) {
+        return fixName(key, srcVer, References.BIOME);
+    }
+
+    private String fixItemType(String key, int srcVer) {
+        return fixName(key, srcVer, References.ITEM_NAME);
+    }
+
+    private static String fixName(String key, int srcVer, TypeReference type) {
+        return INSTANCE.fixer.update(type, new Dynamic<>(OPS_NBT, StringTag.valueOf(key)), srcVer, DATA_VERSION)
+                .asString().result().orElse(key);
+    }
+
+    private final PaperweightAdapter adapter;
+
+    private static final NbtOps OPS_NBT = NbtOps.INSTANCE;
+    private static final int LEGACY_VERSION = 1343;
+    private static int DATA_VERSION;
+    static PaperweightDataConverters INSTANCE;
+
+    private final Map<LegacyType, List<DataConverter>> converters = new EnumMap<>(LegacyType.class);
+    private final Map<LegacyType, List<DataInspector>> inspectors = new EnumMap<>(LegacyType.class);
+
+    // Set on build
+    private DataFixer fixer;
+    private static final Map<String, LegacyType> DFU_TO_LEGACY = new HashMap<>();
+
+    public enum LegacyType {
+        LEVEL(References.LEVEL),
+        PLAYER(References.PLAYER),
+        CHUNK(References.CHUNK),
+        BLOCK_ENTITY(References.BLOCK_ENTITY),
+        ENTITY(References.ENTITY),
+        ITEM_INSTANCE(References.ITEM_STACK),
+        OPTIONS(References.OPTIONS),
+        STRUCTURE(References.STRUCTURE);
+
+        private final TypeReference type;
+
+        LegacyType(TypeReference type) {
+            this.type = type;
+            DFU_TO_LEGACY.put(type.typeName(), this);
+        }
+
+        public TypeReference getDFUType() {
+            return type;
+        }
+    }
+
+    PaperweightDataConverters(int dataVersion, PaperweightAdapter adapter) {
+        DATA_VERSION = dataVersion;
+        INSTANCE = this;
+        this.adapter = adapter;
+        registerConverters();
+        registerInspectors();
+        this.fixer = new WrappedDataFixer(DataFixers.getDataFixer());
+    }
+
+    @SuppressWarnings("unchecked")
+    private class WrappedDataFixer implements DataFixer {
+        private final DataFixer realFixer;
+
+        WrappedDataFixer(DataFixer realFixer) {
+            this.realFixer = realFixer;
+        }
+
+        @Override
+        public <T> Dynamic<T> update(TypeReference type, Dynamic<T> dynamic, int sourceVer, int targetVer) {
+            LegacyType legacyType = DFU_TO_LEGACY.get(type.typeName());
+            if (sourceVer < LEGACY_VERSION && legacyType != null) {
+                CompoundTag cmp = (CompoundTag) dynamic.getValue();
+                int desiredVersion = Math.min(targetVer, LEGACY_VERSION);
+
+                cmp = convert(legacyType, cmp, sourceVer, desiredVersion);
+                sourceVer = desiredVersion;
+                dynamic = new Dynamic(OPS_NBT, cmp);
             }
+            return realFixer.update(type, dynamic, sourceVer, targetVer);
+        }
 
-            private LinCompoundTag fixBlockEntity(LinCompoundTag origTileEnt, int srcVer) {
-                CompoundTag tag = (CompoundTag) adapter.fromNative(origTileEnt);
-                CompoundTag fixed = convert(LegacyType.BLOCK_ENTITY, tag, srcVer);
-                return (LinCompoundTag) adapter.toNativeLin(fixed);
-            }
-
-            private LinCompoundTag fixEntity(LinCompoundTag origEnt, int srcVer) {
-                CompoundTag tag = (CompoundTag) adapter.fromNative(origEnt);
-                CompoundTag fixed = convert(LegacyType.ENTITY, tag, srcVer);
-                return (LinCompoundTag) adapter.toNativeLin(fixed);
-            }
-
-            private String fixBlockState(String blockState, int srcVer) {
-                CompoundTag stateNBT = stateToNBT(blockState);
-                Dynamic<Tag> dynamic = new Dynamic<>(OPS_NBT, stateNBT);
-                CompoundTag fixed = (CompoundTag) INSTANCE.fixer.update(References.BLOCK_STATE, dynamic, srcVer, DATA_VERSION).getValue();
-                return nbtToState(fixed);
-            }
-
-            private String nbtToState(CompoundTag tagCompound) {
-                StringBuilder sb = new StringBuilder();
-                sb.append(tagCompound.getString("Name").get());
-                tagCompound.getCompound("Properties").ifPresent(props -> {
-                    sb.append('[');
-                    sb.append(props.keySet().stream().map(k -> k + "=" + props.getString(k).get().replace("\"", "")).collect(Collectors.joining(",")));
-                    sb.append(']');
-                });
-                return sb.toString();
-            }
-
-            private static CompoundTag stateToNBT(String blockState) {
-                int propIdx = blockState.indexOf('[');
-                CompoundTag tag = new CompoundTag();
-                if (propIdx < 0) {
-                    tag.putString("Name", blockState);
-                } else {
-                    tag.putString("Name", blockState.substring(0, propIdx));
-                    CompoundTag propTag = new CompoundTag();
-                    String props = blockState.substring(propIdx + 1, blockState.length() - 1);
-                    String[] propArr = props.split(",");
-                    for (String pair : propArr) {
-                        final String[] split = pair.split("=");
-                        propTag.putString(split[0], split[1]);
+        private CompoundTag convert(LegacyType type, CompoundTag cmp, int sourceVer, int desiredVersion) {
+            List<DataConverter> converters = PaperweightDataConverters.this.converters.get(type);
+            if (converters != null && !converters.isEmpty()) {
+                for (DataConverter converter : converters) {
+                    int dataVersion = converter.getDataVersion();
+                    if (dataVersion > sourceVer && dataVersion <= desiredVersion) {
+                        cmp = converter.convert(cmp);
                     }
-                    tag.put("Properties", propTag);
-                }
-                return tag;
-            }
-
-            private String fixBiome(String key, int srcVer) {
-                return fixName(key, srcVer, References.BIOME);
-            }
-
-            private String fixItemType(String key, int srcVer) {
-                return fixName(key, srcVer, References.ITEM_NAME);
-            }
-
-            private static String fixName(String key, int srcVer, TypeReference type) {
-                return INSTANCE.fixer.update(type, new Dynamic<>(OPS_NBT, StringTag.valueOf(key)), srcVer, DATA_VERSION)
-                        .asString().result().orElse(key);
-            }
-
-            private final PaperweightAdapter adapter;
-
-            private static final NbtOps OPS_NBT = NbtOps.INSTANCE;
-            private static final int LEGACY_VERSION = 1343;
-            private static int DATA_VERSION;
-            static PaperweightDataConverters INSTANCE;
-
-            private final Map<LegacyType, List<DataConverter>> converters = new EnumMap<>(LegacyType.class);
-            private final Map<LegacyType, List<DataInspector>> inspectors = new EnumMap<>(LegacyType.class);
-
-            // Set on build
-            private DataFixer fixer;
-            private static final Map<String, LegacyType> DFU_TO_LEGACY = new HashMap<>();
-
-            public enum LegacyType {
-                LEVEL(References.LEVEL),
-                PLAYER(References.PLAYER),
-                CHUNK(References.CHUNK),
-                BLOCK_ENTITY(References.BLOCK_ENTITY),
-                ENTITY(References.ENTITY),
-                ITEM_INSTANCE(References.ITEM_STACK),
-                OPTIONS(References.OPTIONS),
-                STRUCTURE(References.STRUCTURE);
-
-                private final TypeReference type;
-
-                LegacyType(TypeReference type) {
-                    this.type = type;
-                    DFU_TO_LEGACY.put(type.typeName(), this);
-                }
-
-                public TypeReference getDFUType() {
-                    return type;
                 }
             }
 
-            PaperweightDataConverters(int dataVersion, PaperweightAdapter adapter) {
-                DATA_VERSION = dataVersion;
-                INSTANCE = this;
-                this.adapter = adapter;
-                registerConverters();
-                registerInspectors();
-                this.fixer = new WrappedDataFixer(DataFixers.getDataFixer());
-            }
-
-            @SuppressWarnings("unchecked")
-            private class WrappedDataFixer implements DataFixer {
-                private final DataFixer realFixer;
-
-                WrappedDataFixer(DataFixer realFixer) {
-                    this.realFixer = realFixer;
-                }
-
-                @Override
-                public <T> Dynamic<T> update(TypeReference type, Dynamic<T> dynamic, int sourceVer, int targetVer) {
-                    LegacyType legacyType = DFU_TO_LEGACY.get(type.typeName());
-                    if (sourceVer < LEGACY_VERSION && legacyType != null) {
-                        CompoundTag cmp = (CompoundTag) dynamic.getValue();
-                        int desiredVersion = Math.min(targetVer, LEGACY_VERSION);
-
-                        cmp = convert(legacyType, cmp, sourceVer, desiredVersion);
-                        sourceVer = desiredVersion;
-                        dynamic = new Dynamic(OPS_NBT, cmp);
-                    }
-                    return realFixer.update(type, dynamic, sourceVer, targetVer);
-                }
-
-                private CompoundTag convert(LegacyType type, CompoundTag cmp, int sourceVer, int desiredVersion) {
-                    List<DataConverter> converters = PaperweightDataConverters.this.converters.get(type);
-                    if (converters != null && !converters.isEmpty()) {
-                        for (DataConverter converter : converters) {
-                            int dataVersion = converter.getDataVersion();
-                            if (dataVersion > sourceVer && dataVersion <= desiredVersion) {
-                                cmp = converter.convert(cmp);
-                            }
-                        }
-                    }
-
-                    List<DataInspector> inspectors = PaperweightDataConverters.this.inspectors.get(type);
-                    if (inspectors != null && !inspectors.isEmpty()) {
-                        for (DataInspector inspector : inspectors) {
-                            cmp = inspector.inspect(cmp, sourceVer, desiredVersion);
-                        }
-                    }
-
-                    return cmp;
-                }
-
-                @Override
-                public Schema getSchema(int i) {
-                    return realFixer.getSchema(i);
+            List<DataInspector> inspectors = PaperweightDataConverters.this.inspectors.get(type);
+            if (inspectors != null && !inspectors.isEmpty()) {
+                for (DataInspector inspector : inspectors) {
+                    cmp = inspector.inspect(cmp, sourceVer, desiredVersion);
                 }
             }
 
-            public static CompoundTag convert(LegacyType type, CompoundTag cmp) {
-                return convert(type.getDFUType(), cmp);
-            }
+            return cmp;
+        }
 
-            public static CompoundTag convert(LegacyType type, CompoundTag cmp, int sourceVer) {
-                return convert(type.getDFUType(), cmp, sourceVer);
-            }
+        @Override
+        public Schema getSchema(int i) {
+            return realFixer.getSchema(i);
+        }
+    }
 
-            public static CompoundTag convert(LegacyType type, CompoundTag cmp, int sourceVer, int targetVer) {
-                return convert(type.getDFUType(), cmp, sourceVer, targetVer);
-            }
+    public static CompoundTag convert(LegacyType type, CompoundTag cmp) {
+        return convert(type.getDFUType(), cmp);
+    }
 
-            public static CompoundTag convert(TypeReference type, CompoundTag cmp) {
-                int i = cmp.getIntOr("DataVersion", -1);
-                return convert(type, cmp, i);
-            }
+    public static CompoundTag convert(LegacyType type, CompoundTag cmp, int sourceVer) {
+        return convert(type.getDFUType(), cmp, sourceVer);
+    }
 
-            public static CompoundTag convert(TypeReference type, CompoundTag cmp, int sourceVer) {
-                return convert(type, cmp, sourceVer, DATA_VERSION);
-            }
+    public static CompoundTag convert(LegacyType type, CompoundTag cmp, int sourceVer, int targetVer) {
+        return convert(type.getDFUType(), cmp, sourceVer, targetVer);
+    }
 
-            public static CompoundTag convert(TypeReference type, CompoundTag cmp, int sourceVer, int targetVer) {
-                if (sourceVer >= targetVer) {
-                    return cmp;
+    public static CompoundTag convert(TypeReference type, CompoundTag cmp) {
+        int i = cmp.getIntOr("DataVersion", -1);
+        return convert(type, cmp, i);
+    }
+
+    public static CompoundTag convert(TypeReference type, CompoundTag cmp, int sourceVer) {
+        return convert(type, cmp, sourceVer, DATA_VERSION);
+    }
+
+    public static CompoundTag convert(TypeReference type, CompoundTag cmp, int sourceVer, int targetVer) {
+        if (sourceVer >= targetVer) {
+            return cmp;
+        }
+        return (CompoundTag) INSTANCE.fixer.update(type, new Dynamic<>(OPS_NBT, cmp), sourceVer, targetVer).getValue();
+    }
+
+
+    public interface DataInspector {
+        CompoundTag inspect(CompoundTag cmp, int sourceVer, int targetVer);
+    }
+
+    public interface DataConverter {
+
+        int getDataVersion();
+
+        CompoundTag convert(CompoundTag cmp);
+    }
+
+
+    private void registerInspector(LegacyType type, DataInspector inspector) {
+        this.inspectors.computeIfAbsent(type, k -> new ArrayList<>()).add(inspector);
+    }
+
+    private void registerConverter(LegacyType type, DataConverter converter) {
+        int version = converter.getDataVersion();
+
+        List<DataConverter> list = this.converters.computeIfAbsent(type, k -> new ArrayList<>());
+        if (!list.isEmpty() && list.get(list.size() - 1).getDataVersion() > version) {
+            for (int j = 0; j < list.size(); ++j) {
+                if (list.get(j).getDataVersion() > version) {
+                    list.add(j, converter);
+                    break;
                 }
-                return (CompoundTag) INSTANCE.fixer.update(type, new Dynamic<>(OPS_NBT, cmp), sourceVer, targetVer).getValue();
             }
+        } else {
+            list.add(converter);
+        }
+    }
 
+    private void registerInspectors() {
+        registerEntityItemList("EntityHorseDonkey", "SaddleItem", "Items");
+        registerEntityItemList("EntityHorseMule", "Items");
+        registerEntityItemList("EntityMinecartChest", "Items");
+        registerEntityItemList("EntityMinecartHopper", "Items");
+        registerEntityItemList("EntityVillager", "Inventory");
+        registerEntityItemListEquipment("EntityArmorStand");
+        registerEntityItemListEquipment("EntityBat");
+        registerEntityItemListEquipment("EntityBlaze");
+        registerEntityItemListEquipment("EntityCaveSpider");
+        registerEntityItemListEquipment("EntityChicken");
+        registerEntityItemListEquipment("EntityCow");
+        registerEntityItemListEquipment("EntityCreeper");
+        registerEntityItemListEquipment("EntityEnderDragon");
+        registerEntityItemListEquipment("EntityEnderman");
+        registerEntityItemListEquipment("EntityEndermite");
+        registerEntityItemListEquipment("EntityEvoker");
+        registerEntityItemListEquipment("EntityGhast");
+        registerEntityItemListEquipment("EntityGiantZombie");
+        registerEntityItemListEquipment("EntityGuardian");
+        registerEntityItemListEquipment("EntityGuardianElder");
+        registerEntityItemListEquipment("EntityHorse");
+        registerEntityItemListEquipment("EntityHorseDonkey");
+        registerEntityItemListEquipment("EntityHorseMule");
+        registerEntityItemListEquipment("EntityHorseSkeleton");
+        registerEntityItemListEquipment("EntityHorseZombie");
+        registerEntityItemListEquipment("EntityIronGolem");
+        registerEntityItemListEquipment("EntityMagmaCube");
+        registerEntityItemListEquipment("EntityMushroomCow");
+        registerEntityItemListEquipment("EntityOcelot");
+        registerEntityItemListEquipment("EntityPig");
+        registerEntityItemListEquipment("EntityPigZombie");
+        registerEntityItemListEquipment("EntityRabbit");
+        registerEntityItemListEquipment("EntitySheep");
+        registerEntityItemListEquipment("EntityShulker");
+        registerEntityItemListEquipment("EntitySilverfish");
+        registerEntityItemListEquipment("EntitySkeleton");
+        registerEntityItemListEquipment("EntitySkeletonStray");
+        registerEntityItemListEquipment("EntitySkeletonWither");
+        registerEntityItemListEquipment("EntitySlime");
+        registerEntityItemListEquipment("EntitySnowman");
+        registerEntityItemListEquipment("EntitySpider");
+        registerEntityItemListEquipment("EntitySquid");
+        registerEntityItemListEquipment("EntityVex");
+        registerEntityItemListEquipment("EntityVillager");
+        registerEntityItemListEquipment("EntityVindicator");
+        registerEntityItemListEquipment("EntityWitch");
+        registerEntityItemListEquipment("EntityWither");
+        registerEntityItemListEquipment("EntityWolf");
+        registerEntityItemListEquipment("EntityZombie");
+        registerEntityItemListEquipment("EntityZombieHusk");
+        registerEntityItemListEquipment("EntityZombieVillager");
+        registerEntityItemSingle("EntityFireworks", "FireworksItem");
+        registerEntityItemSingle("EntityHorse", "ArmorItem");
+        registerEntityItemSingle("EntityHorse", "SaddleItem");
+        registerEntityItemSingle("EntityHorseMule", "SaddleItem");
+        registerEntityItemSingle("EntityHorseSkeleton", "SaddleItem");
+        registerEntityItemSingle("EntityHorseZombie", "SaddleItem");
+        registerEntityItemSingle("EntityItem", "Item");
+        registerEntityItemSingle("EntityItemFrame", "Item");
+        registerEntityItemSingle("EntityPotion", "Potion");
 
-            public interface DataInspector {
-                CompoundTag inspect(CompoundTag cmp, int sourceVer, int targetVer);
-            }
+        registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItem("TileEntityRecordPlayer", "RecordItem"));
+        registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityBrewingStand", "Items"));
+        registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityChest", "Items"));
+        registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityDispenser", "Items"));
+        registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityDropper", "Items"));
+        registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityFurnace", "Items"));
+        registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityHopper", "Items"));
+        registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityShulkerBox", "Items"));
+        registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorMobSpawnerMobs());
+        registerInspector(LegacyType.CHUNK, new DataInspectorChunks());
+        registerInspector(LegacyType.ENTITY, new DataInspectorCommandBlock());
+        registerInspector(LegacyType.ENTITY, new DataInspectorEntityPassengers());
+        registerInspector(LegacyType.ENTITY, new DataInspectorMobSpawnerMinecart());
+        registerInspector(LegacyType.ENTITY, new DataInspectorVillagers());
+        registerInspector(LegacyType.ITEM_INSTANCE, new DataInspectorBlockEntity());
+        registerInspector(LegacyType.ITEM_INSTANCE, new DataInspectorEntity());
+        registerInspector(LegacyType.LEVEL, new DataInspectorLevelPlayer());
+        registerInspector(LegacyType.PLAYER, new DataInspectorPlayer());
+        registerInspector(LegacyType.PLAYER, new DataInspectorPlayerVehicle());
+        registerInspector(LegacyType.STRUCTURE, new DataInspectorStructure());
+    }
 
-            public interface DataConverter {
+    private void registerConverters() {
+        registerConverter(LegacyType.ENTITY, new DataConverterEquipment());
+        registerConverter(LegacyType.BLOCK_ENTITY, new DataConverterSignText());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterMaterialId());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterPotionId());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterSpawnEgg());
+        registerConverter(LegacyType.ENTITY, new DataConverterMinecart());
+        registerConverter(LegacyType.BLOCK_ENTITY, new DataConverterMobSpawner());
+        registerConverter(LegacyType.ENTITY, new DataConverterUUID());
+        registerConverter(LegacyType.ENTITY, new DataConverterHealth());
+        registerConverter(LegacyType.ENTITY, new DataConverterSaddle());
+        registerConverter(LegacyType.ENTITY, new DataConverterHanging());
+        registerConverter(LegacyType.ENTITY, new DataConverterDropChances());
+        registerConverter(LegacyType.ENTITY, new DataConverterRiding());
+        registerConverter(LegacyType.ENTITY, new DataConverterArmorStand());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterBook());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterCookedFish());
+        registerConverter(LegacyType.ENTITY, new DataConverterZombie());
+        registerConverter(LegacyType.OPTIONS, new DataConverterVBO());
+        registerConverter(LegacyType.ENTITY, new DataConverterGuardian());
+        registerConverter(LegacyType.ENTITY, new DataConverterSkeleton());
+        registerConverter(LegacyType.ENTITY, new DataConverterZombieType());
+        registerConverter(LegacyType.ENTITY, new DataConverterHorse());
+        registerConverter(LegacyType.BLOCK_ENTITY, new DataConverterTileEntity());
+        registerConverter(LegacyType.ENTITY, new DataConverterEntity());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterBanner());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterPotionWater());
+        registerConverter(LegacyType.ENTITY, new DataConverterShulker());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterShulkerBoxItem());
+        registerConverter(LegacyType.BLOCK_ENTITY, new DataConverterShulkerBoxBlock());
+        registerConverter(LegacyType.OPTIONS, new DataConverterLang());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterTotem());
+        registerConverter(LegacyType.CHUNK, new DataConverterBedBlock());
+        registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterBedItem());
+    }
 
-                int getDataVersion();
+    private void registerEntityItemList(String type, String... keys) {
+        registerInspector(LegacyType.ENTITY, new DataInspectorItemList(type, keys));
+    }
 
-                CompoundTag convert(CompoundTag cmp);
-            }
+    private void registerEntityItemSingle(String type, String key) {
+        registerInspector(LegacyType.ENTITY, new DataInspectorItem(type, key));
+    }
 
+    private void registerEntityItemListEquipment(String type) {
+        registerEntityItemList(type, "ArmorItems", "HandItems");
+    }
 
-            private void registerInspector(LegacyType type, DataInspector inspector) {
-                this.inspectors.computeIfAbsent(type, k -> new ArrayList<>()).add(inspector);
-            }
+    private static final Map<String, Identifier> OLD_ID_TO_KEY_MAP = new HashMap<>();
 
-            private void registerConverter(LegacyType type, DataConverter converter) {
-                int version = converter.getDataVersion();
-
-                List<DataConverter> list = this.converters.computeIfAbsent(type, k -> new ArrayList<>());
-                if (!list.isEmpty() && list.get(list.size() - 1).getDataVersion() > version) {
-                    for (int j = 0; j < list.size(); ++j) {
-                        if (list.get(j).getDataVersion() > version) {
-                            list.add(j, converter);
-                            break;
-                        }
-                    }
-                } else {
-                    list.add(converter);
-                }
-            }
-
-            private void registerInspectors() {
-                registerEntityItemList("EntityHorseDonkey", "SaddleItem", "Items");
-                registerEntityItemList("EntityHorseMule", "Items");
-                registerEntityItemList("EntityMinecartChest", "Items");
-                registerEntityItemList("EntityMinecartHopper", "Items");
-                registerEntityItemList("EntityVillager", "Inventory");
-                registerEntityItemListEquipment("EntityArmorStand");
-                registerEntityItemListEquipment("EntityBat");
-                registerEntityItemListEquipment("EntityBlaze");
-                registerEntityItemListEquipment("EntityCaveSpider");
-                registerEntityItemListEquipment("EntityChicken");
-                registerEntityItemListEquipment("EntityCow");
-                registerEntityItemListEquipment("EntityCreeper");
-                registerEntityItemListEquipment("EntityEnderDragon");
-                registerEntityItemListEquipment("EntityEnderman");
-                registerEntityItemListEquipment("EntityEndermite");
-                registerEntityItemListEquipment("EntityEvoker");
-                registerEntityItemListEquipment("EntityGhast");
-                registerEntityItemListEquipment("EntityGiantZombie");
-                registerEntityItemListEquipment("EntityGuardian");
-                registerEntityItemListEquipment("EntityGuardianElder");
-                registerEntityItemListEquipment("EntityHorse");
-                registerEntityItemListEquipment("EntityHorseDonkey");
-                registerEntityItemListEquipment("EntityHorseMule");
-                registerEntityItemListEquipment("EntityHorseSkeleton");
-                registerEntityItemListEquipment("EntityHorseZombie");
-                registerEntityItemListEquipment("EntityIronGolem");
-                registerEntityItemListEquipment("EntityMagmaCube");
-                registerEntityItemListEquipment("EntityMushroomCow");
-                registerEntityItemListEquipment("EntityOcelot");
-                registerEntityItemListEquipment("EntityPig");
-                registerEntityItemListEquipment("EntityPigZombie");
-                registerEntityItemListEquipment("EntityRabbit");
-                registerEntityItemListEquipment("EntitySheep");
-                registerEntityItemListEquipment("EntityShulker");
-                registerEntityItemListEquipment("EntitySilverfish");
-                registerEntityItemListEquipment("EntitySkeleton");
-                registerEntityItemListEquipment("EntitySkeletonStray");
-                registerEntityItemListEquipment("EntitySkeletonWither");
-                registerEntityItemListEquipment("EntitySlime");
-                registerEntityItemListEquipment("EntitySnowman");
-                registerEntityItemListEquipment("EntitySpider");
-                registerEntityItemListEquipment("EntitySquid");
-                registerEntityItemListEquipment("EntityVex");
-                registerEntityItemListEquipment("EntityVillager");
-                registerEntityItemListEquipment("EntityVindicator");
-                registerEntityItemListEquipment("EntityWitch");
-                registerEntityItemListEquipment("EntityWither");
-                registerEntityItemListEquipment("EntityWolf");
-                registerEntityItemListEquipment("EntityZombie");
-                registerEntityItemListEquipment("EntityZombieHusk");
-                registerEntityItemListEquipment("EntityZombieVillager");
-                registerEntityItemSingle("EntityFireworks", "FireworksItem");
-                registerEntityItemSingle("EntityHorse", "ArmorItem");
-                registerEntityItemSingle("EntityHorse", "SaddleItem");
-                registerEntityItemSingle("EntityHorseMule", "SaddleItem");
-                registerEntityItemSingle("EntityHorseSkeleton", "SaddleItem");
-                registerEntityItemSingle("EntityHorseZombie", "SaddleItem");
-                registerEntityItemSingle("EntityItem", "Item");
-                registerEntityItemSingle("EntityItemFrame", "Item");
-                registerEntityItemSingle("EntityPotion", "Potion");
-
-                registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItem("TileEntityRecordPlayer", "RecordItem"));
-                registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityBrewingStand", "Items"));
-                registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityChest", "Items"));
-                registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityDispenser", "Items"));
-                registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityDropper", "Items"));
-                registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityFurnace", "Items"));
-                registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityHopper", "Items"));
-                registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorItemList("TileEntityShulkerBox", "Items"));
-                registerInspector(LegacyType.BLOCK_ENTITY, new DataInspectorMobSpawnerMobs());
-                registerInspector(LegacyType.CHUNK, new DataInspectorChunks());
-                registerInspector(LegacyType.ENTITY, new DataInspectorCommandBlock());
-                registerInspector(LegacyType.ENTITY, new DataInspectorEntityPassengers());
-                registerInspector(LegacyType.ENTITY, new DataInspectorMobSpawnerMinecart());
-                registerInspector(LegacyType.ENTITY, new DataInspectorVillagers());
-                registerInspector(LegacyType.ITEM_INSTANCE, new DataInspectorBlockEntity());
-                registerInspector(LegacyType.ITEM_INSTANCE, new DataInspectorEntity());
-                registerInspector(LegacyType.LEVEL, new DataInspectorLevelPlayer());
-                registerInspector(LegacyType.PLAYER, new DataInspectorPlayer());
-                registerInspector(LegacyType.PLAYER, new DataInspectorPlayerVehicle());
-                registerInspector(LegacyType.STRUCTURE, new DataInspectorStructure());
-            }
-
-            private void registerConverters() {
-                registerConverter(LegacyType.ENTITY, new DataConverterEquipment());
-                registerConverter(LegacyType.BLOCK_ENTITY, new DataConverterSignText());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterMaterialId());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterPotionId());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterSpawnEgg());
-                registerConverter(LegacyType.ENTITY, new DataConverterMinecart());
-                registerConverter(LegacyType.BLOCK_ENTITY, new DataConverterMobSpawner());
-                registerConverter(LegacyType.ENTITY, new DataConverterUUID());
-                registerConverter(LegacyType.ENTITY, new DataConverterHealth());
-                registerConverter(LegacyType.ENTITY, new DataConverterSaddle());
-                registerConverter(LegacyType.ENTITY, new DataConverterHanging());
-                registerConverter(LegacyType.ENTITY, new DataConverterDropChances());
-                registerConverter(LegacyType.ENTITY, new DataConverterRiding());
-                registerConverter(LegacyType.ENTITY, new DataConverterArmorStand());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterBook());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterCookedFish());
-                registerConverter(LegacyType.ENTITY, new DataConverterZombie());
-                registerConverter(LegacyType.OPTIONS, new DataConverterVBO());
-                registerConverter(LegacyType.ENTITY, new DataConverterGuardian());
-                registerConverter(LegacyType.ENTITY, new DataConverterSkeleton());
-                registerConverter(LegacyType.ENTITY, new DataConverterZombieType());
-                registerConverter(LegacyType.ENTITY, new DataConverterHorse());
-                registerConverter(LegacyType.BLOCK_ENTITY, new DataConverterTileEntity());
-                registerConverter(LegacyType.ENTITY, new DataConverterEntity());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterBanner());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterPotionWater());
-                registerConverter(LegacyType.ENTITY, new DataConverterShulker());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterShulkerBoxItem());
-                registerConverter(LegacyType.BLOCK_ENTITY, new DataConverterShulkerBoxBlock());
-                registerConverter(LegacyType.OPTIONS, new DataConverterLang());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterTotem());
-                registerConverter(LegacyType.CHUNK, new DataConverterBedBlock());
-                registerConverter(LegacyType.ITEM_INSTANCE, new DataConverterBedItem());
-            }
-
-            private void registerEntityItemList(String type, String... keys) {
-                registerInspector(LegacyType.ENTITY, new DataInspectorItemList(type, keys));
-            }
-
-            private void registerEntityItemSingle(String type, String key) {
-                registerInspector(LegacyType.ENTITY, new DataInspectorItem(type, key));
-            }
-
-            private void registerEntityItemListEquipment(String type) {
-                registerEntityItemList(type, "ArmorItems", "HandItems");
-            }
-
-            private static final Map<String, Identifier> OLD_ID_TO_KEY_MAP = new HashMap<>();
-
-            static {
-                final Map<String, Identifier> map = OLD_ID_TO_KEY_MAP;
-                map.put("EntityItem", Identifier.parse("item"));
-                map.put("EntityExperienceOrb", Identifier.parse("xp_orb"));
-                map.put("EntityAreaEffectCloud", Identifier.parse("area_effect_cloud"));
-                map.put("EntityGuardianElder", Identifier.parse("elder_guardian"));
-                map.put("EntitySkeletonWither", Identifier.parse("wither_skeleton"));
-                map.put("EntitySkeletonStray", Identifier.parse("stray"));
-                map.put("EntityEgg", Identifier.parse("egg"));
-                map.put("EntityLeash", Identifier.parse("leash_knot"));
-                map.put("EntityPainting", Identifier.parse("painting"));
-                map.put("EntityTippedArrow", Identifier.parse("arrow"));
-                map.put("EntitySnowball", Identifier.parse("snowball"));
-                map.put("EntityLargeFireball", Identifier.parse("fireball"));
-                map.put("EntitySmallFireball", Identifier.parse("small_fireball"));
-                map.put("EntityEnderPearl", Identifier.parse("ender_pearl"));
-                map.put("EntityEnderSignal", Identifier.parse("eye_of_ender_signal"));
-                map.put("EntityPotion", Identifier.parse("potion"));
-                map.put("EntityThrownExpBottle", Identifier.parse("xp_bottle"));
-                map.put("EntityItemFrame", Identifier.parse("item_frame"));
-                map.put("EntityWitherSkull", Identifier.parse("wither_skull"));
-                map.put("EntityTNTPrimed", Identifier.parse("tnt"));
-                map.put("EntityFallingBlock", Identifier.parse("falling_block"));
-                map.put("EntityFireworks", Identifier.parse("fireworks_rocket"));
-                map.put("EntityZombieHusk", Identifier.parse("husk"));
-                map.put("EntitySpectralArrow", Identifier.parse("spectral_arrow"));
-                map.put("EntityShulkerBullet", Identifier.parse("shulker_bullet"));
-                map.put("EntityDragonFireball", Identifier.parse("dragon_fireball"));
-                map.put("EntityZombieVillager", Identifier.parse("zombie_villager"));
-                map.put("EntityHorseSkeleton", Identifier.parse("skeleton_horse"));
-                map.put("EntityHorseZombie", Identifier.parse("zombie_horse"));
-                map.put("EntityArmorStand", Identifier.parse("armor_stand"));
-                map.put("EntityHorseDonkey", Identifier.parse("donkey"));
-                map.put("EntityHorseMule", Identifier.parse("mule"));
-                map.put("EntityEvokerFangs", Identifier.parse("evocation_fangs"));
-                map.put("EntityEvoker", Identifier.parse("evocation_illager"));
-                map.put("EntityVex", Identifier.parse("vex"));
-                map.put("EntityVindicator", Identifier.parse("vindication_illager"));
-                map.put("EntityIllagerIllusioner", Identifier.parse("illusion_illager"));
-                map.put("EntityMinecartCommandBlock", Identifier.parse("commandblock_minecart"));
-                map.put("EntityBoat", Identifier.parse("boat"));
-                map.put("EntityMinecartRideable", Identifier.parse("minecart"));
-                map.put("EntityMinecartChest", Identifier.parse("chest_minecart"));
-                map.put("EntityMinecartFurnace", Identifier.parse("furnace_minecart"));
-                map.put("EntityMinecartTNT", Identifier.parse("tnt_minecart"));
-                map.put("EntityMinecartHopper", Identifier.parse("hopper_minecart"));
-                map.put("EntityMinecartMobSpawner", Identifier.parse("spawner_minecart"));
-                map.put("EntityCreeper", Identifier.parse("creeper"));
-                map.put("EntitySkeleton", Identifier.parse("skeleton"));
-                map.put("EntitySpider", Identifier.parse("spider"));
-                map.put("EntityGiantZombie", Identifier.parse("giant"));
-                map.put("EntityZombie", Identifier.parse("zombie"));
-                map.put("EntitySlime", Identifier.parse("slime"));
-                map.put("EntityGhast", Identifier.parse("ghast"));
-                map.put("EntityPigZombie", Identifier.parse("zombie_pigman"));
-                map.put("EntityEnderman", Identifier.parse("enderman"));
-                map.put("EntityCaveSpider", Identifier.parse("cave_spider"))
+    static {
+        final Map<String, Identifier> map = OLD_ID_TO_KEY_MAP;
+        map.put("EntityItem", Identifier.parse("item"));
+        map.put("EntityExperienceOrb", Identifier.parse("xp_orb"));
+        map.put("EntityAreaEffectCloud", Identifier.parse("area_effect_cloud"));
+        map.put("EntityGuardianElder", Identifier.parse("elder_guardian"));
+        map.put("EntitySkeletonWither", Identifier.parse("wither_skeleton"));
+        map.put("EntitySkeletonStray", Identifier.parse("stray"));
+        map.put("EntityEgg", Identifier.parse("egg"));
+        map.put("EntityLeash", Identifier.parse("leash_knot"));
+        map.put("EntityPainting", Identifier.parse("painting"));
+        map.put("EntityTippedArrow", Identifier.parse("arrow"));
+        map.put("EntitySnowball", Identifier.parse("snowball"));
+        map.put("EntityLargeFireball", Identifier.parse("fireball"));
+        map.put("EntitySmallFireball", Identifier.parse("small_fireball"));
+        map.put("EntityEnderPearl", Identifier.parse("ender_pearl"));
+        map.put("EntityEnderSignal", Identifier.parse("eye_of_ender_signal"));
+        map.put("EntityPotion", Identifier.parse("potion"));
+        map.put("EntityThrownExpBottle", Identifier.parse("xp_bottle"));
+        map.put("EntityItemFrame", Identifier.parse("item_frame"));
+        map.put("EntityWitherSkull", Identifier.parse("wither_skull"));
+        map.put("EntityTNTPrimed", Identifier.parse("tnt"));
+        map.put("EntityFallingBlock", Identifier.parse("falling_block"));
+        map.put("EntityFireworks", Identifier.parse("fireworks_rocket"));
+        map.put("EntityZombieHusk", Identifier.parse("husk"));
+        map.put("EntitySpectralArrow", Identifier.parse("spectral_arrow"));
+        map.put("EntityShulkerBullet", Identifier.parse("shulker_bullet"));
+        map.put("EntityDragonFireball", Identifier.parse("dragon_fireball"));
+        map.put("EntityZombieVillager", Identifier.parse("zombie_villager"));
+        map.put("EntityHorseSkeleton", Identifier.parse("skeleton_horse"));
+        map.put("EntityHorseZombie", Identifier.parse("zombie_horse"));
+        map.put("EntityArmorStand", Identifier.parse("armor_stand"));
+        map.put("EntityHorseDonkey", Identifier.parse("donkey"));
+        map.put("EntityHorseMule", Identifier.parse("mule"));
+        map.put("EntityEvokerFangs", Identifier.parse("evocation_fangs"));
+        map.put("EntityEvoker", Identifier.parse("evocation_illager"));
+        map.put("EntityVex", Identifier.parse("vex"));
+        map.put("EntityVindicator", Identifier.parse("vindication_illager"));
+        map.put("EntityIllagerIllusioner", Identifier.parse("illusion_illager"));
+        map.put("EntityMinecartCommandBlock", Identifier.parse("commandblock_minecart"));
+        map.put("EntityBoat", Identifier.parse("boat"));
+        map.put("EntityMinecartRideable", Identifier.parse("minecart"));
+        map.put("EntityMinecartChest", Identifier.parse("chest_minecart"));
+        map.put("EntityMinecartFurnace", Identifier.parse("furnace_minecart"));
+        map.put("EntityMinecartTNT", Identifier.parse("tnt_minecart"));
+        map.put("EntityMinecartHopper", Identifier.parse("hopper_minecart"));
+        map.put("EntityMinecartMobSpawner", Identifier.parse("spawner_minecart"));
+        map.put("EntityCreeper", Identifier.parse("creeper"));
+        map.put("EntitySkeleton", Identifier.parse("skeleton"));
+        map.put("EntitySpider", Identifier.parse("spider"));
+        map.put("EntityGiantZombie", Identifier.parse("giant"));
+        map.put("EntityZombie", Identifier.parse("zombie"));
+        map.put("EntitySlime", Identifier.parse("slime"));
+        map.put("EntityGhast", Identifier.parse("ghast"));
+        map.put("EntityPigZombie", Identifier.parse("zombie_pigman"));
+        map.put("EntityEnderman", Identifier.parse("enderman"));
+        map.put("EntityCaveSpider", Identifier.parse("cave_spider"));
+        map.put("EntitySilverfish", Identifier.parse("silverfish"));
         map.put("EntityBlaze", Identifier.parse("blaze"));
         map.put("EntityMagmaCube", Identifier.parse("magma_cube"));
         map.put("EntityEnderDragon", Identifier.parse("ender_dragon"));
