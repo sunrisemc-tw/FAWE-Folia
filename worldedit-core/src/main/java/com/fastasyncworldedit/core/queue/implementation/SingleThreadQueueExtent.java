@@ -17,6 +17,7 @@ import com.fastasyncworldedit.core.queue.IQueueExtent;
 import com.fastasyncworldedit.core.queue.implementation.blocks.CharSetBlocks;
 import com.fastasyncworldedit.core.queue.implementation.chunk.ChunkHolder;
 import com.fastasyncworldedit.core.queue.implementation.chunk.NullChunk;
+import com.fastasyncworldedit.core.util.FoliaSupport;
 import com.fastasyncworldedit.core.util.MathMan;
 import com.fastasyncworldedit.core.util.MemUtil;
 import com.fastasyncworldedit.core.wrappers.WorldWrapper;
@@ -254,7 +255,13 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
             }
         }
 
-        if (Fawe.isMainThread()) {
+        // FAWE-Folia start - also run inline when executing on a Folia region tick thread. FAWE's normal pipeline runs on
+        // async FaweForkJoinThreads (isTickThread() == false), so this only triggers when the edit was deliberately
+        // dispatched onto a region thread (e.g. FoliaThirdPartyExtent routing a single-chunk edit so a third-party logging
+        // extent's Bukkit-API reads are legal). Running inline there avoids submitting back to the FAWE pool and blocking
+        // the region thread on the result, which would dead-lock the region. Off Folia, isTickThread() == isMainThread(),
+        // so behaviour is unchanged.
+        if (Fawe.isMainThread() || (FoliaSupport.isFolia() && FoliaSupport.isTickThread())) {
             V result = (V) chunk.call();
             if (result == null) {
                 return (V) (Future) Futures.immediateFuture(null);
@@ -262,6 +269,7 @@ public class SingleThreadQueueExtent extends ExtentBatchProcessorHolder implemen
                 return result;
             }
         }
+        // FAWE-Folia end
 
         return (V) Fawe.instance().getQueueHandler().submit(chunk);
     }
