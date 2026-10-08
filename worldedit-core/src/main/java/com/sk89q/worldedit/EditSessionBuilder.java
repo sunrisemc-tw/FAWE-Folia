@@ -798,6 +798,14 @@ public final class EditSessionBuilder {
             for (String allowed : Settings.settings().EXTENT.ALLOWED_PLUGINS) {
                 if (className.contains(allowed.toLowerCase(Locale.ROOT))) {
                     this.wrapped = true;
+                    // FAWE-Folia start - third-party extents (e.g. CoreProtect's block logger) commonly read the world
+                    // through the Bukkit API, which Folia pins to the owning region thread. FAWE runs edits on async
+                    // threads, so guard such extents by redirecting their bulk operations to the correct region thread.
+                    // The guard is a no-op on non-Folia platforms (it is only inserted when running under Folia).
+                    if (com.fastasyncworldedit.core.util.FoliaSupport.isFolia() && world != null) {
+                        return new com.fastasyncworldedit.core.extent.FoliaThirdPartyExtent(toReturn, world);
+                    }
+                    // FAWE-Folia end
                     return toReturn;
                 }
             }
